@@ -1,10 +1,10 @@
-# Python EVNEX
+# python-evnex
 
 Pull charging data from the rather sparsely documented EVNEX api.
 
 ## Installation
 
-pip install git+https://github.com/hardbyte/python-evnex
+pip install evnex
 
 ## Usage
 
@@ -52,3 +52,10 @@ export EVNEX_CLIENT_PASSWORD=<your password>
 
 python -m examples.get_charge_point_detail
 ```
+
+## TODO
+
+- Ability to pass in optional httpx session
+- Home Assistant integration
+- Local network access/polling?
+- Ideally transfer to Evnex

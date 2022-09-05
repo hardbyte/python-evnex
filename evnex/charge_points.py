@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Any, Literal
 from uuid import UUID
 
 import httpx
@@ -39,7 +38,7 @@ class EvnexLocation(BaseModel):
 
 
 class EvnexChargePointConnector(BaseModel):
-    powerType: str
+    powerType: str  # AC_1_PHASE
     connectorId: str
     evseId: str
     updatedDate: str
@@ -48,7 +47,7 @@ class EvnexChargePointConnector(BaseModel):
     voltage: float
     connectorFormat: str
     ocppStatus: str
-    status: str
+    status: str     # OCCUPIED, CHARGING
     ocppCode: str
     meter: EvnexChargePointConnectorMeter
 
@@ -70,7 +69,7 @@ class EvnexChargePointBase(BaseModel):
     name: str
     ocppChargePointId: str
     serial: str
-    networkStatus: str  # Could probably be an enum
+    networkStatus: str  # Could probably be an enum ONLINE
     location: EvnexLocation
 
 
@@ -152,6 +151,5 @@ def get_charge_point_detail(token: str, charge_point_id: str) -> EvnexChargePoin
         }
     )
     r.raise_for_status()
-    print(r.json())
     return EvnexGetChargePointDetailResponse(**r.json()).data
 

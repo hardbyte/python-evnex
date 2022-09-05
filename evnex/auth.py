@@ -16,7 +16,10 @@ def _authenticate(username, password, config) -> Cognito:
     u = Cognito(config.COGNITO_USER_POOL_ID, config.COGNITO_CLIENT_ID, username=username)
     # If this method call succeeds the instance will have the following attributes:
     # id_token, refresh_token, access_token, expires_in, expires_datetime, and token_type.
-    u.authenticate(password=password)
+    try:
+        u.authenticate(password=password)
+    except:
+        raise ValueError("Problem with authentication")
     return u
 
 
