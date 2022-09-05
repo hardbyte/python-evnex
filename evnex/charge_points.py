@@ -48,7 +48,7 @@ class EvnexChargePointConnector(BaseModel):
     connectorFormat: str
     ocppStatus: str
     status: str     # OCCUPIED, CHARGING
-    ocppCode: str
+    ocppCode: str   # CHARGING
     meter: EvnexChargePointConnectorMeter
 
 
@@ -124,7 +124,7 @@ class EvnexChargePointDetail(EvnexChargePointBase):
     configuration: EvnexChargePointConfiguration
     electricityCost: EvnexElectricityCost
     loadSchedule: EvnexChargePointLoadSchedule
-
+    connectors: list[EvnexChargePointConnector]
 
 class EvnexGetChargePointDetailResponse(BaseModel):
     data: EvnexChargePointDetail
