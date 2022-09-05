@@ -1,4 +1,4 @@
 # Python EVNEX
 
-Pull data from the rather sparsly documented EVNEX api.
+Pull charging data from the rather sparsely documented EVNEX api.
 
