@@ -66,7 +66,5 @@ python -m examples.get_charge_point_detail
 
 ## TODO
 
-- Ability to pass in optional httpx session
-- Home Assistant integration
 - Local network access/polling?
 - Ideally transfer to Evnex
