@@ -1,48 +1,59 @@
 # python-evnex
 
-Pull charging data from the rather sparsely documented EVNEX api.
+Python client for the Evnex API.
+
+Author not affiliated with Evnex.
+
+## Features 
+
+- Talks to your Evnex charger via Cloud API
+- Automatic retries with exponential backoff
+- Automatic re-authentication
+- Optionally pass in a `httpx` client
+- Optionally pass in tokens to resume existing session
 
 ## Installation
 
+```
 pip install evnex
+```
+
 
 ## Usage
 
 ```python
+import asyncio
 from pydantic import BaseSettings, SecretStr
-
-from evnex.auth import retrieve_auth_token
-from evnex.charge_points import get_charge_point_detail, get_org_charge_points
-from evnex.user import get_user_detail
+from evnex.api import Evnex
 
 
 class EvnexAuthDetails(BaseSettings):
     EVNEX_CLIENT_USERNAME: str
     EVNEX_CLIENT_PASSWORD: SecretStr
 
-    
-if __name__ == '__main__':
+
+async def main():
     creds = EvnexAuthDetails()
-    token = retrieve_auth_token(username=creds.EVNEX_CLIENT_USERNAME,
-                                password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value())
+    evnex = Evnex(username=creds.EVNEX_CLIENT_USERNAME,
+                  password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value())
 
-    user_data = get_user_detail(token)
-
-    print("User:", user_data.name, user_data.email, user_data.id)
+    user_data = await evnex.get_user_detail()
 
     for org in user_data.organisations:
-        print("Getting charge points for", org.name)
-        charge_points = get_org_charge_points(token=token, org_id=org.id)
-        for charge_point in charge_points:
-            print(charge_point.name, charge_point.networkStatus, charge_point.serial, charge_point.id)
+        print("Getting 7 day insight for", org.name, "User:", user_data.name)
+        insights = await evnex.get_org_insight(days=7, org_id=org.id)
 
-            print(get_charge_point_detail(token=token, charge_point_id=charge_point.id))
+        for segment in insights:
+            print(segment)
 
+
+if __name__ == '__main__':
+    asyncio.run(main())
 ```
 
 ## Examples
 
-`python-evnex` is intended as a library, but a few example scripts are provided.
+`python-evnex` is intended as a library, but a few example scripts are provided in the `examples` folder.
 
 Providing authentication for the examples is via environment variables, e.g. on nix systems:
 

@@ -1,7 +1,8 @@
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from evnex.schema.cost import EvnexCost
 
 
 class EvnexChargePointConnectorMeter(BaseModel):
@@ -27,7 +28,7 @@ class EvnexAddress(BaseModel):
 
 
 class EvnexLocation(BaseModel):
-    id: UUID
+    id: str
     name: str
     createdDate: datetime
     updatedDate: datetime
@@ -60,7 +61,7 @@ class EvnexChargePointDetails(BaseModel):
 
 class EvnexChargePointBase(BaseModel):
     # Attributes shared by brief and detail endpoints
-    id: UUID
+    id: str
     createdDate: datetime
     updatedDate: datetime
     networkStatusUpdatedDate: datetime
@@ -127,3 +128,25 @@ class EvnexChargePointDetail(EvnexChargePointBase):
 
 class EvnexGetChargePointDetailResponse(BaseModel):
     data: EvnexChargePointDetail
+
+
+class EvnexChargePointTransaction(BaseModel):
+    id: str
+    connectorId: str
+    endDate: datetime | None
+    evseId: str
+    powerUsage: float
+    reason: str | None     # EVDisconnected, Other
+    startDate: datetime
+    carbonOffset: float | None
+    electricityCost: EvnexCost | None
+
+
+class EvnexChargePointTransactions(BaseModel):
+    items: list[EvnexChargePointTransaction]
+
+
+class EvnexGetChargePointTransactionsResponse(BaseModel):
+    data: EvnexChargePointTransactions
+
+
