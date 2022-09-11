@@ -1,5 +1,7 @@
 import logging
 from typing import Optional
+
+import botocore
 from tenacity import before_log, before_sleep_log, retry, TryAgain, retry_if_not_exception_type, retry_if_result, \
     wait_random_exponential
 from httpx import AsyncClient, ReadTimeout, Response
@@ -7,6 +9,7 @@ from pycognito import Cognito
 from pydantic import BaseSettings, HttpUrl, ValidationError
 from structlog import get_logger
 
+from evnex.errors import NotAuthorizedException
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
@@ -58,11 +61,12 @@ class Evnex:
             client_id=config.EVNEX_COGNITO_CLIENT_ID,
             username=username,
             id_token=id_token,
-            refresh_token=None,
-            access_token=None,
+            refresh_token=refresh_token,
+            access_token=access_token,
         )
 
         if any(token is None for token in {id_token, access_token, refresh_token}):
+            logger.debug("Starting cognito auth flow")
             self.authenticate()
 
     def authenticate(self, client_metadata=None):
@@ -70,9 +74,13 @@ class Evnex:
         Authenticate the user and update the access_token
 
         :param client_metadata: Metadata you can provide for custom workflows that RespondToAuthChallenge triggers.
+        :raises NotAuthorizedException
         """
         logger.debug("Authenticating to EVNEX cloud api")
-        self.cognito.authenticate(password=self.password, client_metadata=client_metadata)
+        try:
+            self.cognito.authenticate(password=self.password, client_metadata=client_metadata)
+        except botocore.exceptions.ClientError as e:
+            raise NotAuthorizedException(e.args[0]) from e
 
     @property
     def access_token(self):

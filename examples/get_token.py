@@ -1,6 +1,6 @@
 from pydantic import BaseSettings, SecretStr
 
-from evnex.api import Evnex
+from evnex import Evnex
 
 
 class EvnexAuthDetails(BaseSettings):

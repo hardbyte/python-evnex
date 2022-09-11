@@ -25,7 +25,9 @@ async def main():
         charge_points = await evnex.get_org_charge_points(org_id=org.id)
 
         for charge_point in charge_points:
+
             print(charge_point.name, charge_point.networkStatus, charge_point.serial, charge_point.id)
+
             print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
             print("Getting transactions")
