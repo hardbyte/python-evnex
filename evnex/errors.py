@@ -2,3 +2,4 @@
 
 class NotAuthorizedException(ValueError):
     pass
+

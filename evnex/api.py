@@ -94,8 +94,10 @@ class Evnex:
     def refresh_token(self):
         return self.cognito.refresh_token
 
-    @retry(wait=wait_random_exponential(multiplier=1, max=60),
-           retry=retry_if_not_exception_type(ValidationError))
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
     async def get_user_detail(self) -> EvnexUserDetail:
         response = await self.httpx_client.get(
             'https://client-api.evnex.io/v2/apps/user',
@@ -114,18 +116,18 @@ class Evnex:
         return data
 
     async def _check_api_response(self, response):
-        #logger.debug("Response code", status_code=response.status_code)
         if response.status_code == 401:
-            logger.debug("Access Token likely expired, authenticating then retrying")
-            self.authenticate()
-            raise TryAgain
-        #logger.debug("Raw Response", data=response.text)
+            logger.debug("Access Token likely expired, re-authenticate then retry")
+            raise NotAuthorizedException()
+
         response.raise_for_status()
 
         return response.json()
 
-    @retry(wait=wait_random_exponential(multiplier=1, max=60),
-           retry=retry_if_not_exception_type(ValidationError))
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
     async def get_org_charge_points(self, org_id: Optional[str] = None) -> list[EvnexChargePoint]:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -140,8 +142,10 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointsResponse(**json_data).data.items
 
-    @retry(wait=wait_random_exponential(multiplier=1, max=60),
-           retry=retry_if_not_exception_type(ValidationError))
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
     async def get_org_insight(self, days: int, org_id: Optional[str] = None) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -159,8 +163,10 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexGetOrgInsightResponse.parse_obj(json_data).data.items
 
-    @retry(wait=wait_random_exponential(multiplier=1, max=60),
-           retry=retry_if_not_exception_type(ValidationError))
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
     async def get_charge_point_detail(self, charge_point_id: str) -> EvnexChargePointDetail:
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}',
@@ -173,8 +179,10 @@ class Evnex:
 
         return EvnexGetChargePointDetailResponse(**json_data).data
 
-    @retry(wait=wait_random_exponential(multiplier=1, max=60),
-           retry=retry_if_not_exception_type(ValidationError))
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
     async def get_charge_point_transactions(self, charge_point_id: str) -> list[EvnexChargePointTransaction]:
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/transactions',
@@ -187,11 +195,9 @@ class Evnex:
 
         return EvnexGetChargePointTransactionsResponse(**json_data).data.items
 
-
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type((ValidationError, ReadTimeout)),
-        before_sleep=before_sleep_log(logger, logging.DEBUG)
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException, ReadTimeout))
     )
     async def stop_charge_point(self,
                                 charge_point_id: str,
