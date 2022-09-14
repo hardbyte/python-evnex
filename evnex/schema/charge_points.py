@@ -87,7 +87,7 @@ class EvnexChargePoint(EvnexChargePointBase):
 
     details: EvnexChargePointDetails
     connectors: list[EvnexChargePointConnector]
-    lastHeard: datetime
+    lastHeard: datetime | None
     maxCurrent: float
     tokenRequired: bool
     needsRegistrationInformation: bool
@@ -113,7 +113,7 @@ class EvnexChargeProfileSegment(BaseModel):
 
 class EvnexElectricityCost(BaseModel):
     currency: str
-    duration: int
+    duration: int | None
     costs: list[EvnexElectricityCostSegment]
 
 

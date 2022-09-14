@@ -182,7 +182,6 @@ class Evnex:
             }
         )
         json_data = await self._check_api_response(r)
-
         return EvnexGetChargePointDetailResponse(**json_data).data
 
     @retry(
