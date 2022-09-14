@@ -38,18 +38,26 @@ async def main():
             solar_config = await evnex.get_charge_point_solar_config(charge_point_id=charge_point.id)
             print(solar_config)
 
-            print("Setting charge override setting to ON")
-            override = await evnex.set_charge_point_override(charge_point_id=charge_point.id, charge_now=True)
-            print(override)
+            # print(f"Setting charge override setting to {'off' if override.chargeNow else 'on'}")
+            # await evnex.set_charge_point_override(charge_point_id=charge_point.id,
+            #                                                  charge_now=(not override.chargeNow))
+            # print("Getting charge override setting again")
+            # override = await evnex.get_charge_point_override(charge_point_id=charge_point.id)
+            # print(override)
 
+            print()
+            print("Getting transactions")
+            transactions = await evnex.get_charge_point_transactions(charge_point_id=charge_point.id)
+            print(len(transactions), 'transactions')
 
-            #print("Getting transactions")
-            #transactions = await evnex.get_charge_point_transactions(charge_point_id=charge_point.id)
-            #print(transactions)
-
-        # print("Stopping charge point")
-        # print(await evnex.stop_charge_point(charge_point_id=charge_points[0].id))
-
+            if len(transactions) and transactions[0].endDate is None:
+                print("Active Charging Session")
+                print(transactions[0])
+                #print("Stopping charge point - will require plugging vehicle back in manually")
+                #print(await evnex.stop_charge_point(charge_point_id=charge_points[0].id))
+            else:
+                print("Last charging session")
+                print(transactions[0])
 
 if __name__ == '__main__':
     asyncio.run(main())

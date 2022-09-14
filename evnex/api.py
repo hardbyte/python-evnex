@@ -124,7 +124,11 @@ class Evnex:
 
         response.raise_for_status()
 
-        return response.json()
+        try:
+            return response.json()
+        except:
+            logger.debug(f"Invalid json response.\n{response.status_code}\n{response.text}")
+            raise
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -218,7 +222,7 @@ class Evnex:
         wait=wait_random_exponential(multiplier=1, max=60),
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
     )
-    async def set_charge_point_override(self, charge_point_id: str, charge_now: bool, connector_id: int = 1) -> EvnexChargePointOverrideConfig:
+    async def set_charge_point_override(self, charge_point_id: str, charge_now: bool, connector_id: int = 1):
         r = await self.httpx_client.post(
             f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/set-override',
             headers={
@@ -231,15 +235,16 @@ class Evnex:
                 'chargeNow': charge_now
             }
         )
-        json_data = await self._check_api_response(r)
-
-        return EvnexChargePointOverrideConfig(**json_data)
+        r.raise_for_status()
+        return True
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
     )
     async def get_charge_point_transactions(self, charge_point_id: str) -> list[EvnexChargePointTransaction]:
+        # Similar to f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions',
+
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/transactions',
             headers={
