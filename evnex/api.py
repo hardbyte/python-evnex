@@ -13,7 +13,9 @@ from evnex.errors import NotAuthorizedException
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
-from evnex.schema.charge_points import EvnexChargePoint, EvnexChargePointDetail, EvnexChargePointTransaction, \
+from evnex.schema.charge_points import EvnexChargePoint, EvnexChargePointDetail, EvnexChargePointOverrideConfig, \
+    EvnexChargePointSolarConfig, \
+    EvnexChargePointTransaction, \
     EvnexGetChargePointDetailResponse, \
     EvnexGetChargePointTransactionsResponse
 from evnex.schema.charge_points import EvnexGetChargePointsResponse
@@ -178,6 +180,60 @@ class Evnex:
         json_data = await self._check_api_response(r)
 
         return EvnexGetChargePointDetailResponse(**json_data).data
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
+    async def get_charge_point_solar_config(self, charge_point_id: str) -> EvnexChargePointSolarConfig:
+        r = await self.httpx_client.post(
+            f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-solar',
+            headers={
+                'Accept': 'application/json',
+                'Authorization': self.access_token,
+                'content-type': 'application/json'
+            }
+        )
+        json_data = await self._check_api_response(r)
+
+        return EvnexChargePointSolarConfig(**json_data)
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
+    async def get_charge_point_override(self, charge_point_id: str) -> EvnexChargePointOverrideConfig:
+        r = await self.httpx_client.post(
+            f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-override',
+            headers={
+                'Accept': 'application/json',
+                'Authorization': self.access_token
+            }
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexChargePointOverrideConfig(**json_data)
+
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
+    )
+    async def set_charge_point_override(self, charge_point_id: str, charge_now: bool, connector_id: int = 1) -> EvnexChargePointOverrideConfig:
+        r = await self.httpx_client.post(
+            f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/set-override',
+            headers={
+                'Accept': 'application/json',
+                'Authorization': self.access_token,
+                'content-type': 'application/json'
+            },
+            json={
+                'connectorId': connector_id,
+                'chargeNow': charge_now
+            }
+        )
+        json_data = await self._check_api_response(r)
+
+        return EvnexChargePointOverrideConfig(**json_data)
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),

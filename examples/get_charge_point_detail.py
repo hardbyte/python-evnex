@@ -30,9 +30,22 @@ async def main():
 
             print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
-            print("Getting transactions")
-            transactions = await evnex.get_charge_point_transactions(charge_point_id=charge_point.id)
-            print(transactions)
+            print("Getting charge override setting")
+            override = await evnex.get_charge_point_override(charge_point_id=charge_point.id)
+            print(override)
+
+            print("Solar Config")
+            solar_config = await evnex.get_charge_point_solar_config(charge_point_id=charge_point.id)
+            print(solar_config)
+
+            print("Setting charge override setting to ON")
+            override = await evnex.set_charge_point_override(charge_point_id=charge_point.id, charge_now=True)
+            print(override)
+
+
+            #print("Getting transactions")
+            #transactions = await evnex.get_charge_point_transactions(charge_point_id=charge_point.id)
+            #print(transactions)
 
         # print("Stopping charge point")
         # print(await evnex.stop_charge_point(charge_point_id=charge_points[0].id))

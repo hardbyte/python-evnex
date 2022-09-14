@@ -59,6 +59,17 @@ class EvnexChargePointDetails(BaseModel):
     iccid: str
 
 
+class EvnexChargePointSolarConfig(BaseModel):
+    solarWithSchedule: bool
+    powerSensorInstalled: bool
+    solarStartExportPower: float
+    solarStopImportPower: float
+
+
+class EvnexChargePointOverrideConfig(BaseModel):
+    chargeNow: bool
+
+
 class EvnexChargePointBase(BaseModel):
     # Attributes shared by brief and detail endpoints
     id: str
