@@ -41,7 +41,7 @@ class EvnexChargePointConnector(BaseModel):
     powerType: str  # AC_1_PHASE
     connectorId: str
     evseId: str
-    updatedDate: str
+    updatedDate: datetime
     connectorType: str
     amperage: float
     voltage: float
@@ -86,7 +86,7 @@ class EvnexChargePointBase(BaseModel):
 class EvnexChargePoint(EvnexChargePointBase):
 
     details: EvnexChargePointDetails
-    connectors: list[EvnexChargePointConnector]
+    connectors: list[EvnexChargePointConnector] | None
     lastHeard: datetime | None
     maxCurrent: float
     tokenRequired: bool
