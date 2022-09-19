@@ -1,10 +1,9 @@
-import logging
 from typing import Optional
+from importlib.metadata import PackageNotFoundError, version
 
 import botocore
-from tenacity import before_log, before_sleep_log, retry, TryAgain, retry_if_not_exception_type, retry_if_result, \
-    wait_random_exponential
-from httpx import AsyncClient, ReadTimeout, Response
+from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
+from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
 from pydantic import BaseSettings, HttpUrl, ValidationError
 from structlog import get_logger
@@ -71,6 +70,18 @@ class Evnex:
             logger.debug("Starting cognito auth flow")
             self.authenticate()
 
+        try:
+            self.version = version('evnex')
+        except PackageNotFoundError:
+            self.version = 'unknown'
+
+        self._common_headers = {
+            'Accept': 'application/json',
+            'content-type': 'application/json',
+            'Authorization': self.access_token,
+            'User-Agent': f'python-evnex/{self.version}'
+        }
+
     def authenticate(self, client_metadata=None):
         """
         Authenticate the user and update the access_token
@@ -103,10 +114,7 @@ class Evnex:
     async def get_user_detail(self) -> EvnexUserDetail:
         response = await self.httpx_client.get(
             'https://client-api.evnex.io/v2/apps/user',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token
-            }
+            headers=self._common_headers
         )
         response_json = await self._check_api_response(response)
         data = EvnexGetUserResponse(**response_json).data
@@ -140,10 +148,7 @@ class Evnex:
         logger.debug("Listing org charge points")
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token
-            }
+            headers=self._common_headers
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointsResponse(**json_data).data.items
@@ -158,10 +163,7 @@ class Evnex:
         logger.debug("Getting org insight", org_id=org_id)
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/insights',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token
-            },
+            headers=self._common_headers,
             params={
                 'days': days
             }
@@ -174,12 +176,10 @@ class Evnex:
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException))
     )
     async def get_charge_point_detail(self, charge_point_id: str) -> EvnexChargePointDetail:
+
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token
-            }
+            headers=self._common_headers
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointDetailResponse(**json_data).data
@@ -191,11 +191,7 @@ class Evnex:
     async def get_charge_point_solar_config(self, charge_point_id: str) -> EvnexChargePointSolarConfig:
         r = await self.httpx_client.post(
             f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-solar',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token,
-                'content-type': 'application/json'
-            }
+            headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
 
@@ -208,10 +204,7 @@ class Evnex:
     async def get_charge_point_override(self, charge_point_id: str) -> EvnexChargePointOverrideConfig:
         r = await self.httpx_client.post(
             f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-override',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token
-            }
+            headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig(**json_data)
@@ -224,11 +217,7 @@ class Evnex:
     async def set_charge_point_override(self, charge_point_id: str, charge_now: bool, connector_id: int = 1):
         r = await self.httpx_client.post(
             f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/set-override',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token,
-                'content-type': 'application/json'
-            },
+            headers=self._common_headers,
             json={
                 'connectorId': connector_id,
                 'chargeNow': charge_now
@@ -246,10 +235,7 @@ class Evnex:
 
         r = await self.httpx_client.get(
             f'https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/transactions',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token
-            }
+            headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
 
@@ -278,11 +264,9 @@ class Evnex:
         logger.info("Stopping charging", org_id=org_id, charge_point_id=charge_point_id)
         r = await self.httpx_client.post(
             f'https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/remote-stop-transaction',
-            headers={
-                'Accept': 'application/json',
-                'Authorization': self.access_token,
-                'Connection': 'Keep-Alive'
-            },
+            headers=self._common_headers,
+            # 'Connection': 'Keep-Alive'
+
             json={
                 'connectorId': connector_id
             },
