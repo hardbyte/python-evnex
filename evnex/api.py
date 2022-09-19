@@ -254,6 +254,8 @@ class Evnex:
         """
         Stop an active charging session.
 
+        Note the vehicle will need to be unplugged before starting a new session.
+
         :raises httpx.ReadTimeout error
             If there is no active charging session the server responds with a 504 Gateway Timeout,
             this manifests as a httpx.ReadTimeout error. This will be raised immediately without retry.
