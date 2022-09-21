@@ -6,10 +6,10 @@ from evnex.schema.cost import EvnexCost
 
 
 class EvnexChargePointConnectorMeter(BaseModel):
-    powerType: str          # "AC_1_PHASE"
+    powerType: str  # "AC_1_PHASE"
     updatedDate: datetime
     power: float
-    _register: float = Field(alias='register')
+    _register: float = Field(alias="register")
     frequency: float
 
 
@@ -47,8 +47,8 @@ class EvnexChargePointConnector(BaseModel):
     voltage: float
     connectorFormat: str
     ocppStatus: str
-    status: str     # OCCUPIED, CHARGING
-    ocppCode: str   # CHARGING
+    status: str  # OCCUPIED, CHARGING
+    ocppCode: str  # CHARGING
     meter: EvnexChargePointConnectorMeter
 
 
@@ -147,7 +147,7 @@ class EvnexChargePointTransaction(BaseModel):
     endDate: datetime | None
     evseId: str
     powerUsage: float
-    reason: str | None     # EVDisconnected, Other
+    reason: str | None  # EVDisconnected, Other
     startDate: datetime
     carbonOffset: float | None
     electricityCost: EvnexCost | None
@@ -159,5 +159,3 @@ class EvnexChargePointTransactions(BaseModel):
 
 class EvnexGetChargePointTransactionsResponse(BaseModel):
     data: EvnexChargePointTransactions
-
-

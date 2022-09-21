@@ -1,5 +1,2 @@
-
-
 class NotAuthorizedException(ValueError):
     pass
-
