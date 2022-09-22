@@ -1,3 +1,4 @@
+import logging
 from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
 
@@ -5,7 +6,6 @@ import botocore
 from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
 from pydantic import BaseSettings, HttpUrl, ValidationError
-from structlog import get_logger
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
 
 from evnex.errors import NotAuthorizedException
@@ -23,7 +23,7 @@ from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 
-logger = get_logger("evnex.api")
+logger = logging.getLogger("evnex.api")
 
 
 class EvnexConfig(BaseSettings):
@@ -96,9 +96,7 @@ class Evnex:
         """
         logger.debug("Authenticating to EVNEX cloud api")
         try:
-            self.cognito.authenticate(
-                password=self.password
-            )
+            self.cognito.authenticate(password=self.password)
         except botocore.exceptions.ClientError as e:
             raise NotAuthorizedException(e.args[0]) from e
 
@@ -172,7 +170,7 @@ class Evnex:
     ) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Getting org insight", org_id=org_id)
+        logger.debug("Getting org insight")
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/insights",
             headers=self._common_headers,
@@ -282,7 +280,7 @@ class Evnex:
         """
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.info("Stopping charging", org_id=org_id, charge_point_id=charge_point_id)
+        logger.info("Stopping charging session")
         r = await self.httpx_client.post(
             f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/remote-stop-transaction",
             headers=self._common_headers,
