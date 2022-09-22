@@ -64,7 +64,15 @@ export EVNEX_CLIENT_PASSWORD=<your password>
 python -m examples.get_charge_point_detail
 ```
 
-## TODO
+## Developer Notes
 
-- Local network access/polling?
-- Ideally transfer to Evnex
+### Making a new release
+
+What ends up on PyPi is what really matters. 
+
+Update the version in `pyproject.toml`, build and publish with poetry:
+
+```shell
+poetry build
+poetry publish
+```
