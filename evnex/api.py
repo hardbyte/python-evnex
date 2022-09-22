@@ -81,7 +81,9 @@ class Evnex:
         except PackageNotFoundError:
             self.version = "unknown"
 
-        self._common_headers = {
+    @property
+    def _common_headers(self):
+        return {
             "Accept": "application/json",
             "content-type": "application/json",
             "Authorization": self.access_token,
@@ -99,6 +101,7 @@ class Evnex:
             self.cognito.authenticate(password=self.password)
         except botocore.exceptions.ClientError as e:
             raise NotAuthorizedException(e.args[0]) from e
+
 
     @property
     def access_token(self):
