@@ -53,5 +53,5 @@ jobs:
         run: poetry install --no-interaction --no-root
       - name: Check formatting
         uses: psf/black@stable
-      - name: Unit Test
-        run: poetry run pytest
+      #- name: Unit Test
+      #  run: poetry run pytest
