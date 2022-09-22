@@ -8,9 +8,11 @@ class EvnexAuthDetails(BaseSettings):
     EVNEX_CLIENT_PASSWORD: SecretStr
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     creds = EvnexAuthDetails()
-    evnex = Evnex(username=creds.EVNEX_CLIENT_USERNAME,
-                                password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value())
+    evnex = Evnex(
+        username=creds.EVNEX_CLIENT_USERNAME,
+        password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
+    )
 
     print(evnex.access_token)

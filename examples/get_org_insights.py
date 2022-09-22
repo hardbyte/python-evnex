@@ -1,5 +1,7 @@
 import asyncio
+
 from pydantic import BaseSettings, SecretStr
+
 from evnex.api import Evnex
 
 
@@ -10,8 +12,10 @@ class EvnexAuthDetails(BaseSettings):
 
 async def main():
     creds = EvnexAuthDetails()
-    evnex = Evnex(username=creds.EVNEX_CLIENT_USERNAME,
-                  password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value())
+    evnex = Evnex(
+        username=creds.EVNEX_CLIENT_USERNAME,
+        password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
+    )
 
     user_data = await evnex.get_user_detail()
 
@@ -23,5 +27,5 @@ async def main():
             print(segment)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())
