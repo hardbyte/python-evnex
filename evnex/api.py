@@ -88,17 +88,16 @@ class Evnex:
             "User-Agent": f"python-evnex/{self.version}",
         }
 
-    def authenticate(self, client_metadata=None):
+    def authenticate(self):
         """
         Authenticate the user and update the access_token
 
-        :param client_metadata: Metadata you can provide for custom workflows that RespondToAuthChallenge triggers.
         :raises NotAuthorizedException
         """
         logger.debug("Authenticating to EVNEX cloud api")
         try:
             self.cognito.authenticate(
-                password=self.password, client_metadata=client_metadata
+                password=self.password
             )
         except botocore.exceptions.ClientError as e:
             raise NotAuthorizedException(e.args[0]) from e
