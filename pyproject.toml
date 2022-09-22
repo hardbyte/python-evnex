@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evnex"
-version = "0.2.9"
+version = "0.2.10"
 description = ""
 authors = ["Brian Thorne <brian@hardbyte.nz>"]
 
@@ -12,9 +12,9 @@ issues = "https://github.com/hardbyte/python-evnex/issues"
 python = "^3.10"
 httpx = "^0.23.0"
 pycognito = "^2022.8.0"
-pydantic = "^1.10.1"
-tenacity = "^8.0.1"
-structlog = "^22.1.0"
+pydantic = "^1.10"
+tenacity = "^8.1"
+structlog = "^22.1"
 
 
 [tool.poetry.dev-dependencies]
