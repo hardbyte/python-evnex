@@ -34,13 +34,11 @@ async def main():
                 charge_point.id,
             )
 
+            print("charge point details (API V2)")
             print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
-            print("Getting charge override setting")
-            override = await evnex.get_charge_point_override(
-                charge_point_id=charge_point.id
-            )
-            print(override)
+            print("charge point details (API V3)")
+            print(await evnex.get_charge_point_detail_v3(charge_point_id=charge_point.id))
 
             print("Solar Config")
             solar_config = await evnex.get_charge_point_solar_config(
