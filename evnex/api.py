@@ -220,6 +220,10 @@ class Evnex:
     async def get_charge_point_solar_config(
         self, charge_point_id: str
     ) -> EvnexChargePointSolarConfig:
+        """
+        :param charge_point_id:
+        :raises: ReadTimeout if the charge point is offline.
+        """
         r = await self.httpx_client.post(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-solar",
             headers=self._common_headers,
@@ -230,14 +234,20 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException, ReadTimeout)),
     )
     async def get_charge_point_override(
         self, charge_point_id: str
     ) -> EvnexChargePointOverrideConfig:
+        """
+
+        :param charge_point_id:
+        :raises: ReadTimeout if the charge point is offline.
+        """
         r = await self.httpx_client.post(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-override",
             headers=self._common_headers,
+            timeout=15,
         )
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig(**json_data)
