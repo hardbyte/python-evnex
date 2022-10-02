@@ -39,11 +39,13 @@ async def main():
             print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
             print("charge point details (API V3)")
-            charge_point_detail = await evnex.get_charge_point_detail_v3(charge_point_id=charge_point.id)
+            charge_point_detail = await evnex.get_charge_point_detail_v3(
+                charge_point_id=charge_point.id
+            )
             print(charge_point_detail)
 
             # Several calls hang if the ChargePoint is offline, so we only call it if we expect it to pass
-            if charge_point_detail.data.attributes.networkStatus == 'OFFLINE':
+            if charge_point_detail.data.attributes.networkStatus == "OFFLINE":
                 print("Charge point offline")
                 continue
 

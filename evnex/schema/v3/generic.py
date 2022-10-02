@@ -1,11 +1,11 @@
-from typing import Dict, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from pydantic import BaseModel
 from pydantic.generics import GenericModel
 
 from evnex.schema.v3.relationships import EvnexRelationships
 
-ResponseDataT = TypeVar('ResponseDataT')
+ResponseDataT = TypeVar("ResponseDataT")
 
 
 class EvnexV3Include(BaseModel):

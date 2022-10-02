@@ -4,7 +4,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from evnex.schema.v3.cost import EvnexElectricityCost
-from evnex.schema.v3.relationships import EvnexRelationships
 
 
 class EvnexChargeSchedulePeriod(BaseModel):
@@ -32,7 +31,7 @@ class EvnexChargePointConnectorMeter(BaseModel):
 
 class EvnexChargePointConnector(BaseModel):
     evseId: str
-    connectorFormat: str # CABLE
+    connectorFormat: str  # CABLE
     connectorType: str
     ocppStatus: str
     powerType: str  # AC_1_PHASE

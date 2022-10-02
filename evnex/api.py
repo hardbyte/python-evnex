@@ -22,8 +22,11 @@ from evnex.schema.charge_points import (
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
+from evnex.schema.v3.charge_points import (
+    EvnexChargePointDetail as EvnexChargePointDetailV3,
+)
 from evnex.schema.v3.generic import EvnexV3APIResponse
-from evnex.schema.v3.charge_points import EvnexChargePointDetail as EvnexChargePointDetailV3
+
 logger = logging.getLogger("evnex.api")
 
 
@@ -102,7 +105,6 @@ class Evnex:
             self.cognito.authenticate(password=self.password)
         except botocore.exceptions.ClientError as e:
             raise NotAuthorizedException(e.args[0]) from e
-
 
     @property
     def access_token(self):
@@ -234,7 +236,9 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException, ReadTimeout)),
+        retry=retry_if_not_exception_type(
+            (ValidationError, NotAuthorizedException, ReadTimeout)
+        ),
     )
     async def get_charge_point_override(
         self, charge_point_id: str
