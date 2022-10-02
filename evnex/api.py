@@ -22,6 +22,10 @@ from evnex.schema.charge_points import (
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
+from evnex.schema.v3.charge_points import (
+    EvnexChargePointDetail as EvnexChargePointDetailV3,
+)
+from evnex.schema.v3.generic import EvnexV3APIResponse
 
 logger = logging.getLogger("evnex.api")
 
@@ -101,7 +105,6 @@ class Evnex:
             self.cognito.authenticate(password=self.password)
         except botocore.exceptions.ClientError as e:
             raise NotAuthorizedException(e.args[0]) from e
-
 
     @property
     def access_token(self):
@@ -201,9 +204,28 @@ class Evnex:
         wait=wait_random_exponential(multiplier=1, max=60),
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
+    async def get_charge_point_detail_v3(
+        self, charge_point_id: str
+    ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
+
+        r = await self.httpx_client.get(
+            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}",
+            headers=self._common_headers,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexV3APIResponse[EvnexChargePointDetailV3](**json_data)
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+    )
     async def get_charge_point_solar_config(
         self, charge_point_id: str
     ) -> EvnexChargePointSolarConfig:
+        """
+        :param charge_point_id:
+        :raises: ReadTimeout if the charge point is offline.
+        """
         r = await self.httpx_client.post(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-solar",
             headers=self._common_headers,
@@ -214,14 +236,22 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type(
+            (ValidationError, NotAuthorizedException, ReadTimeout)
+        ),
     )
     async def get_charge_point_override(
         self, charge_point_id: str
     ) -> EvnexChargePointOverrideConfig:
+        """
+
+        :param charge_point_id:
+        :raises: ReadTimeout if the charge point is offline.
+        """
         r = await self.httpx_client.post(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-override",
             headers=self._common_headers,
+            timeout=15,
         )
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig(**json_data)
