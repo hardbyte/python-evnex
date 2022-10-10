@@ -26,7 +26,7 @@ class EvnexChargePointConnectorMeter(BaseModel):
     power: float
     _register: float = Field(alias="register")
     updatedDate: datetime
-    voltageL1N: float
+    voltageL1N: Optional[float]
 
 
 class EvnexChargePointConnector(BaseModel):
