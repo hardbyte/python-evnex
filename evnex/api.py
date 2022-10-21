@@ -340,7 +340,7 @@ class Evnex:
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
             headers=self._common_headers,
             # 'Connection': 'Keep-Alive'
-            json={"connectorId": connector_id, "changeAvailabilityType": availability},
+            json={"connectorId": connector_id, "changeAvailabilityType": type},
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
