@@ -120,8 +120,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_user_detail(self) -> EvnexUserDetail:
         response = await self.httpx_client.get(
@@ -138,8 +137,7 @@ class Evnex:
 
     async def _check_api_response(self, response):
         if response.status_code == 401:
-            logger.debug(
-                "Access Token likely expired, re-authenticate then retry")
+            logger.debug("Access Token likely expired, re-authenticate then retry")
             raise NotAuthorizedException()
 
         response.raise_for_status()
@@ -154,8 +152,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_charge_points(
         self, org_id: Optional[str] = None
@@ -172,8 +169,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_insight(
         self, days: int, org_id: Optional[str] = None
@@ -191,8 +187,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_charge_point_detail(
         self, charge_point_id: str
@@ -207,8 +202,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_charge_point_detail_v3(
         self, charge_point_id: str
@@ -223,8 +217,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_charge_point_solar_config(
         self, charge_point_id: str
@@ -265,8 +258,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def set_charge_point_override(
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
@@ -281,8 +273,7 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type(
-            (ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_charge_point_transactions(
         self, charge_point_id: str
@@ -349,8 +340,7 @@ class Evnex:
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
             headers=self._common_headers,
             # 'Connection': 'Keep-Alive'
-            json={"connectorId": connector_id,
-                  "changeAvailabilityType": availability},
+            json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
@@ -375,8 +365,12 @@ class Evnex:
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/load-management",
             headers=self._common_headers,
             # 'Connection': 'Keep-Alive'
-            json={"chargingProfilePeriods":  charging_profile_periods,
-                  "enabled": enabled, "units": units, "duration": duration},
+            json={
+                "chargingProfilePeriods": charging_profile_periods,
+                "enabled": enabled,
+                "units": units,
+                "duration": duration,
+            },
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
