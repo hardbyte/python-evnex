@@ -363,8 +363,8 @@ class Evnex:
         charging_profile_periods,
         enabled: bool = True,
         duration: int = 86400,
-        units: str = "A"
-        timeout = 10,
+        units: str = "A",
+        timeout=10,
     ) -> EvnexCommandResponse:
         """
         Set a load management profile for the charger.
