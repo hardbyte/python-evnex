@@ -370,7 +370,7 @@ class Evnex:
         Set a load management profile for the charger.
         {"chargingProfilePeriods": [{"limit": <=32, "start": 0-86400}],"enabled": "True|False", "units": "A", "duration": <=86400}
         """
-        logger.info(f"Changing connector {connector_id} to {availability}")
+        logger.info(f"Applying load management profile")
         r = await self.httpx_client.put(
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/load-management",
             headers=self._common_headers,
