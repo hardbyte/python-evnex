@@ -107,8 +107,8 @@ class EvnexElectricityCostSegment(BaseModel):
 
 
 class EvnexChargeProfileSegment(BaseModel):
-    limit: float
-    start: float
+    limit: int
+    start: int
 
 
 class EvnexElectricityCost(BaseModel):
