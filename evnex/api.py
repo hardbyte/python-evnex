@@ -391,23 +391,31 @@ class Evnex:
     async def set_charger_load_profile(
         self,
         charge_point_id: str,
-        charging_profile_periods,
+        charging_profile_periods: list[EvnexChargeProfileSegment | dict[str, int]],
         enabled: bool = True,
         duration: int = 86400,
         units: str = "A",
         timeout=10,
-    ) -> EvnexCommandResponse:
+    ) -> EvnexChargePointLoadSchedule:
         """
         Set a load management profile for the charger.
-        {"chargingProfilePeriods": [{"limit": <=32, "start": 0-86400}],"enabled": "True|False", "units": "A", "duration": <=86400}
+
+        Used to control the maximum output of a charge point.
         """
         logger.info(f"Applying load management profile")
+        # Parse and validate the input
+        schedule = [
+            segment.dict()
+            for segment in pydantic.parse_obj_as(
+                list[EvnexChargeProfileSegment], charging_profile_periods
+            )
+        ]
+
         r = await self.httpx_client.put(
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/load-management",
             headers=self._common_headers,
-            # 'Connection': 'Keep-Alive'
             json={
-                "chargingProfilePeriods": charging_profile_periods,
+                "chargingProfilePeriods": schedule,
                 "enabled": enabled,
                 "units": units,
                 "duration": duration,
@@ -415,5 +423,46 @@ class Evnex:
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
+        return EvnexChargePointLoadSchedule.parse_obj(json_data["data"])
 
-        return EvnexCommandResponse.parse_obj(json_data["data"])
+    async def set_charge_point_schedule(
+        self,
+        charge_point_id: str,
+        charging_profile_periods: list[EvnexChargeProfileSegment | dict[str, int]],
+        enabled: bool = True,
+        duration: int = 86400,
+        timeout=10,
+    ) -> EvnexChargePointLoadSchedule:
+        """
+        Configure times that a charge point will charge between.
+        Defaults to setting a daily period. Specify segments using seconds from midnight (using configured timezone).
+
+        [
+          {"start": 0, "limit": 0},
+          {"start": 3600, "limit": 32},
+          {"start": 4500, "limit": 0}
+        ]
+        """
+        logger.info(f"Applying load management profile")
+        # Parse and validate the input
+        schedule = [
+            segment.dict()
+            for segment in pydantic.parse_obj_as(
+                list[EvnexChargeProfileSegment], charging_profile_periods
+            )
+        ]
+
+        r = await self.httpx_client.put(
+            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/charge-schedule",
+            headers=self._common_headers,
+            json={
+                "chargingProfilePeriods": schedule,
+                "enabled": enabled,
+                # "units": "A",
+                "duration": duration,
+                # "timezone": timezone,
+            },
+            timeout=timeout,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexChargePointLoadSchedule.parse_obj(json_data["data"])
