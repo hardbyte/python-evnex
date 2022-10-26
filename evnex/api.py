@@ -3,6 +3,7 @@ from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
 
 import botocore
+import pydantic
 from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
 from pydantic import BaseSettings, HttpUrl, ValidationError
@@ -12,9 +13,11 @@ from evnex.errors import NotAuthorizedException
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
+    EvnexChargePointLoadSchedule,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
     EvnexChargePointTransaction,
+    EvnexChargeProfileSegment,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
     EvnexGetChargePointTransactionsResponse,
@@ -325,26 +328,64 @@ class Evnex:
 
         return EvnexCommandResponse.parse_obj(json_data["data"])
 
-    async def set_connector_availability(
+    async def enable_charger(self, charge_point_id: str, connector_id: str = "0"):
+        await self.set_charger_availability(
+            charge_point_id=charge_point_id, available=True, connector_id=connector_id
+        )
+
+    async def disable_charger(self, charge_point_id: str, connector_id: str = "0"):
+        await self.set_charger_availability(
+            charge_point_id=charge_point_id, available=False, connector_id=connector_id
+        )
+
+    async def set_charger_availability(
         self,
         charge_point_id: str,
+        available: bool = True,
         connector_id: str = "0",
-        type: str = "Inoperative",
         timeout=10,
     ) -> EvnexCommandResponse:
         """
-        Change availability (Inoperative|Operative) of charger (connector_id=0) or each connector.
+        Change availability of charger (default) or for a specific connector.
+
+        When a charge point is disabled the Charge Point Detail will include:
+            ocppStatus: "UNAVAILABLE"
+            ocppCode: "NoError"
+
         """
+        availability = "Operative" if available else "Inoperative"
         logger.info(f"Changing connector {connector_id} to {availability}")
         r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
+            # f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
+            f"https://client-api.evnex.io/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/change-availability",
             headers=self._common_headers,
-            # 'Connection': 'Keep-Alive'
-            json={"connectorId": connector_id, "changeAvailabilityType": type},
+            json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
+        return EvnexCommandResponse.parse_obj(json_data["data"])
 
+    async def unlock_charger(
+        self,
+        charge_point_id: str,
+        available: bool = True,
+        connector_id: str = "0",
+        timeout=10,
+    ) -> EvnexCommandResponse:
+        """
+        Unlock charger
+
+        Note this also serves to re-enable a disabled charger.
+        """
+        availability = "Operative" if available else "Inoperative"
+        logger.info(f"Changing connector {connector_id} to {availability}")
+        r = await self.httpx_client.post(
+            f"https://client-api.evnex.io/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/unlock-connector",
+            headers=self._common_headers,
+            json={"connectorId": connector_id, "changeAvailabilityType": availability},
+            timeout=timeout,
+        )
+        json_data = await self._check_api_response(r)
         return EvnexCommandResponse.parse_obj(json_data["data"])
 
     async def set_charger_load_profile(
