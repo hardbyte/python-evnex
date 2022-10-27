@@ -381,7 +381,12 @@ class Evnex:
         timeout=10,
     ) -> EvnexCommandResponse:
         """
-        Unlock charger
+        Unlock charger.
+
+        Only relevant for socketed chargers, this tells the charger to try to retract the pin which
+        locks a cable in place (at the charger end) for the duration of a transaction. Some sockets
+        have a sensor to tell them whether this has been successful or not, but some don’t, so they
+        always report success when it might not have actually worked.
 
         Note this also serves to re-enable a disabled charger.
         """
