@@ -1,6 +1,7 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
+from warnings import warn
 
 import botocore
 import pydantic
@@ -29,6 +30,7 @@ from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
 )
 from evnex.schema.v3.generic import EvnexV3APIResponse
+from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 
 logger = logging.getLogger("evnex.api")
 
@@ -142,6 +144,10 @@ class Evnex:
         if response.status_code == 401:
             logger.debug("Access Token likely expired, re-authenticate then retry")
             raise NotAuthorizedException()
+        if not response.is_success:
+            logger.warning(
+                f"Unsuccessful request\n{response.status_code}\n{response.text}"
+            )
 
         response.raise_for_status()
 
@@ -195,7 +201,8 @@ class Evnex:
     async def get_charge_point_detail(
         self, charge_point_id: str
     ) -> EvnexChargePointDetail:
-
+        warn('This method is deprecated. See get_charge_point_detail_v3',
+             DeprecationWarning, stacklevel=2)
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}",
             headers=self._common_headers,
@@ -328,12 +335,12 @@ class Evnex:
 
         return EvnexCommandResponse.parse_obj(json_data["data"])
 
-    async def enable_charger(self, charge_point_id: str, connector_id: str = "0"):
+    async def enable_charger(self, charge_point_id: str, connector_id: int = 1):
         await self.set_charger_availability(
             charge_point_id=charge_point_id, available=True, connector_id=connector_id
         )
 
-    async def disable_charger(self, charge_point_id: str, connector_id: str = "0"):
+    async def disable_charger(self, charge_point_id: str, connector_id: int = 1):
         await self.set_charger_availability(
             charge_point_id=charge_point_id, available=False, connector_id=connector_id
         )
@@ -342,28 +349,29 @@ class Evnex:
         self,
         charge_point_id: str,
         available: bool = True,
-        connector_id: str = "0",
+        connector_id: int = 1,
         timeout=10,
     ) -> EvnexCommandResponse:
         """
-        Change availability of charger (default) or for a specific connector.
+        Change availability of charger.
+
+        If the charger support multiple connectors, you can disable a specific connector.
 
         When a charge point is disabled the Charge Point Detail will include:
             ocppStatus: "UNAVAILABLE"
             ocppCode: "NoError"
-
         """
         availability = "Operative" if available else "Inoperative"
         logger.info(f"Changing connector {connector_id} to {availability}")
         r = await self.httpx_client.post(
-            # f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
-            f"https://client-api.evnex.io/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/change-availability",
+            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
             headers=self._common_headers,
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
-        return EvnexCommandResponse.parse_obj(json_data["data"])
+
+        return EvnexCommandResponseV3.parse_obj(json_data['data'])
 
     async def unlock_charger(
         self,

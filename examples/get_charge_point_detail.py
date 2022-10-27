@@ -1,8 +1,10 @@
 import asyncio
-
+import logging
 from pydantic import BaseSettings, SecretStr
 
 from evnex.api import Evnex
+
+logging.basicConfig(level=logging.WARNING)
 
 
 class EvnexAuthDetails(BaseSettings):
@@ -22,7 +24,7 @@ async def main():
     print("User:", user_data.name, user_data.email, user_data.id)
 
     for org in user_data.organisations:
-        print("Getting charge points for", org.name)
+        print(f"Getting charge points for '{org.name}'")
         charge_points = await evnex.get_org_charge_points(org_id=org.id)
 
         for charge_point in charge_points:
@@ -34,9 +36,9 @@ async def main():
                 charge_point.id,
             )
 
-            # Can use the v3 or v3 evnex api to retrieve details on a charge point
-            print("charge point details (API V2)")
-            print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
+            # Note the v2 evnex api is also available to retrieve details on a charge point
+            #print("charge point details (API V2)")
+            #print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
             print("charge point details (API V3)")
             charge_point_detail = await evnex.get_charge_point_detail_v3(
