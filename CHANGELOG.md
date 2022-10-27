@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 
+## 0.3.1 - 2022-10-27
+
+### Changed
+
+- `set_charger_availability` switched to Evnex API V3.
+- Marked `get_charge_point_detail` as deprecated in favor of `get_charge_point_detail_v3`
+
+
 ## 0.3.0 - 2022-10-26
 
 ### Added
