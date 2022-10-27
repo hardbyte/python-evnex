@@ -335,12 +335,12 @@ class Evnex:
 
         return EvnexCommandResponse.parse_obj(json_data["data"])
 
-    async def enable_charger(self, charge_point_id: str, connector_id: int = 1):
+    async def enable_charger(self, charge_point_id: str, connector_id: int | str = 1):
         await self.set_charger_availability(
             charge_point_id=charge_point_id, available=True, connector_id=connector_id
         )
 
-    async def disable_charger(self, charge_point_id: str, connector_id: int = 1):
+    async def disable_charger(self, charge_point_id: str, connector_id: int | str = 1):
         await self.set_charger_availability(
             charge_point_id=charge_point_id, available=False, connector_id=connector_id
         )
@@ -349,7 +349,7 @@ class Evnex:
         self,
         charge_point_id: str,
         available: bool = True,
-        connector_id: int = 1,
+        connector_id: int | str = 1,
         timeout=10,
     ) -> EvnexCommandResponse:
         """
