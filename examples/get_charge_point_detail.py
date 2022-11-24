@@ -1,5 +1,6 @@
 import asyncio
 import logging
+
 from pydantic import BaseSettings, SecretStr
 
 from evnex.api import Evnex
@@ -37,8 +38,8 @@ async def main():
             )
 
             # Note the v2 evnex api is also available to retrieve details on a charge point
-            #print("charge point details (API V2)")
-            #print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
+            # print("charge point details (API V2)")
+            # print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
             print("charge point details (API V3)")
             charge_point_detail = await evnex.get_charge_point_detail_v3(

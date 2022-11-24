@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evnex"
-version = "0.3.2a0"
+version = "0.3.2a1"
 description = "A Python wrapper for the EVNEX Cloud API"
 authors = ["Brian Thorne <brian@hardbyte.nz>"]
 

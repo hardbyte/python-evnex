@@ -14,7 +14,7 @@ class EvnexUserDetail(BaseModel):
     name: str
     email: str
     organisations: list[EvnexOrgBrief]
-    type: Literal["User","Installer"] = "User"
+    type: Literal["User", "Installer"] = "User"
 
 
 class EvnexGetUserResponse(BaseModel):

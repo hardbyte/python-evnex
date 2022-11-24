@@ -29,8 +29,8 @@ from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
 )
-from evnex.schema.v3.generic import EvnexV3APIResponse
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
+from evnex.schema.v3.generic import EvnexV3APIResponse
 
 logger = logging.getLogger("evnex.api")
 
@@ -201,8 +201,11 @@ class Evnex:
     async def get_charge_point_detail(
         self, charge_point_id: str
     ) -> EvnexChargePointDetail:
-        warn('This method is deprecated. See get_charge_point_detail_v3',
-             DeprecationWarning, stacklevel=2)
+        warn(
+            "This method is deprecated. See get_charge_point_detail_v3",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}",
             headers=self._common_headers,
@@ -371,7 +374,7 @@ class Evnex:
         )
         json_data = await self._check_api_response(r)
 
-        return EvnexCommandResponseV3.parse_obj(json_data['data'])
+        return EvnexCommandResponseV3.parse_obj(json_data["data"])
 
     async def unlock_charger(
         self,

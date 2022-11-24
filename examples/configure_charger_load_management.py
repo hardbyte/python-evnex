@@ -1,8 +1,9 @@
 import asyncio
-from pydantic import BaseSettings, SecretStr
-from evnex.api import Evnex
-
 import logging
+
+from pydantic import BaseSettings, SecretStr
+
+from evnex.api import Evnex
 
 logging.basicConfig(level=logging.INFO)
 
