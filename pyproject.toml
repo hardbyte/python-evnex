@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evnex"
-version = "0.3.1"
+version = "0.3.2a0"
 description = "A Python wrapper for the EVNEX Cloud API"
 authors = ["Brian Thorne <brian@hardbyte.nz>"]
 
@@ -10,8 +10,8 @@ issues = "https://github.com/hardbyte/python-evnex/issues"
 
 [tool.poetry.dependencies]
 python = "^3.10"
-httpx = "^0.23.0"
-pycognito = "2022.8.0"
+httpx = "^0.23"
+pycognito = "^2022.11"
 pydantic = "^1.10"
 tenacity = "^8.1"
 
@@ -19,7 +19,7 @@ tenacity = "^8.1"
 [tool.poetry.dev-dependencies]
 black = "^22.10"
 isort = "^5.10.1"
-pylint = "^2.15.3"
+pylint = "^2.15"
 pytest = "^7.1"
 pre-commit = "^2.20.0"
 

@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 
+## 0.3.2 - 2022-11-24
+
+### Changed
+
+- Fix to support `Installer` users.
+- Update dependencies.
+- Release via GitHub rather than manually.
+
 ## 0.3.1 - 2022-10-27
 
 ### Changed
