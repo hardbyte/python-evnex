@@ -25,6 +25,8 @@ jobs:
           filter_mode: diff_context
           glob_pattern: "**/*.py"
           pylint_args: "--disable=all, --enable=unused-import"
+      - name: Check formatting
+        uses: psf/black@stable
 
   build:
     name: Build Python Package
@@ -53,8 +55,6 @@ jobs:
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --no-interaction --no-root
-      - name: Check formatting
-        uses: psf/black@stable
       - name: Build Package
         run: poetry build
       - name: Save artifacts
