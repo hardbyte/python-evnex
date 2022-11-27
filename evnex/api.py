@@ -148,6 +148,9 @@ class Evnex:
             logger.warning(
                 f"Unsuccessful request\n{response.status_code}\n{response.text}"
             )
+        logger.debug(
+            f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
+        )
 
         response.raise_for_status()
 
@@ -224,6 +227,9 @@ class Evnex:
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}",
             headers=self._common_headers,
+        )
+        logger.debug(
+            f"Raw get charge point detail response.\n{r.status_code}\n{r.text}"
         )
         json_data = await self._check_api_response(r)
         return EvnexV3APIResponse[EvnexChargePointDetailV3](**json_data)

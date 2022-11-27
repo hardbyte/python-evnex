@@ -47,10 +47,12 @@ async def main():
             )
             print(charge_point_detail)
 
-            # Several calls hang if the ChargePoint is offline, so we only call it if we expect it to pass
             if charge_point_detail.data.attributes.networkStatus == "OFFLINE":
                 print("Charge point offline")
+                # Several calls hang if the ChargePoint is offline, so we only keep querying this charge point if it is online
                 continue
+            else:
+                print("Charge point online")
 
             print("Getting charge override setting")
             override = await evnex.get_charge_point_override(
