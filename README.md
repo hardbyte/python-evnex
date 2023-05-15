@@ -68,9 +68,10 @@ python -m examples.get_charge_point_detail
 
 ### Making a new release
 
-What ends up on PyPi is what really matters. 
+What ends up on PyPi is what really matters. Creating a release in GitHub should 
+trigger a release workflow that builds and publishes to PyPi.
 
-Update the version in `pyproject.toml`, build and publish with poetry:
+To manually release, update the version in `pyproject.toml`, build and publish with poetry:
 
 ```shell
 poetry build
