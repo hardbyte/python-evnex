@@ -223,7 +223,6 @@ class Evnex:
     async def get_charge_point_detail_v3(
         self, charge_point_id: str
     ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
-
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}",
             headers=self._common_headers,
