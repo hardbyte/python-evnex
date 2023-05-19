@@ -1,8 +1,11 @@
 import asyncio
+import logging
 
 from pydantic import BaseSettings, SecretStr
 
 from evnex.api import Evnex
+
+logging.basicConfig(level=logging.WARNING)
 
 
 class EvnexAuthDetails(BaseSettings):
@@ -33,9 +36,9 @@ async def main():
                 charge_point.id,
             )
 
-            # Can use the v3 or v3 evnex api to retrieve details on a charge point
-            print("charge point details (API V2)")
-            print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
+            # Note the v2 evnex api is also available to retrieve details on a charge point
+            # print("charge point details (API V2)")
+            # print(await evnex.get_charge_point_detail(charge_point_id=charge_point.id))
 
             print("charge point details (API V3)")
             charge_point_detail = await evnex.get_charge_point_detail_v3(
@@ -43,10 +46,12 @@ async def main():
             )
             print(charge_point_detail)
 
-            # Several calls hang if the ChargePoint is offline, so we only call it if we expect it to pass
             if charge_point_detail.data.attributes.networkStatus == "OFFLINE":
                 print("Charge point offline")
+                # Several calls hang if the ChargePoint is offline, so we only keep querying this charge point if it is online
                 continue
+            else:
+                print("Charge point online")
 
             print("Getting charge override setting")
             override = await evnex.get_charge_point_override(

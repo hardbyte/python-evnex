@@ -84,7 +84,6 @@ class EvnexChargePointBase(BaseModel):
 
 
 class EvnexChargePoint(EvnexChargePointBase):
-
     details: EvnexChargePointDetails
     connectors: list[EvnexChargePointConnector] | None
     lastHeard: datetime | None
@@ -107,8 +106,8 @@ class EvnexElectricityCostSegment(BaseModel):
 
 
 class EvnexChargeProfileSegment(BaseModel):
-    limit: float
-    start: float
+    limit: int
+    start: int
 
 
 class EvnexElectricityCost(BaseModel):

@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar
+from typing import Generic, Optional, TypeVar
 
 from pydantic import BaseModel
 from pydantic.generics import GenericModel
@@ -23,4 +23,4 @@ class EvnexV3Data(GenericModel, Generic[ResponseDataT]):
 
 class EvnexV3APIResponse(GenericModel, Generic[ResponseDataT]):
     data: EvnexV3Data[ResponseDataT]
-    included: list[EvnexV3Include]
+    included: Optional[list[EvnexV3Include]]

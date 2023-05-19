@@ -1,8 +1,10 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
 from typing import Optional
+from warnings import warn
 
 import botocore
+import pydantic
 from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
 from pydantic import BaseSettings, HttpUrl, ValidationError
@@ -12,8 +14,10 @@ from evnex.errors import NotAuthorizedException
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
+    EvnexChargePointLoadSchedule,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
+    EvnexChargeProfileSegment,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
 )
@@ -25,6 +29,7 @@ from evnex.schema.v3.charge_points import (
     EvnexGetChargePointSessionsResponse,
     EvnexChargePointSessions,
 )
+from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
 
 logger = logging.getLogger("evnex.api")
@@ -139,6 +144,13 @@ class Evnex:
         if response.status_code == 401:
             logger.debug("Access Token likely expired, re-authenticate then retry")
             raise NotAuthorizedException()
+        if not response.is_success:
+            logger.warning(
+                f"Unsuccessful request\n{response.status_code}\n{response.text}"
+            )
+        logger.debug(
+            f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
+        )
 
         response.raise_for_status()
 
@@ -192,6 +204,11 @@ class Evnex:
     async def get_charge_point_detail(
         self, charge_point_id: str
     ) -> EvnexChargePointDetail:
+        warn(
+            "This method is deprecated. See get_charge_point_detail_v3",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}",
             headers=self._common_headers,
@@ -209,6 +226,9 @@ class Evnex:
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}",
             headers=self._common_headers,
+        )
+        logger.debug(
+            f"Raw get charge point detail response.\n{r.status_code}\n{r.text}"
         )
         json_data = await self._check_api_response(r)
         return EvnexV3APIResponse[EvnexChargePointDetailV3](**json_data)
@@ -321,3 +341,148 @@ class Evnex:
         json_data = await self._check_api_response(r)
 
         return EvnexCommandResponse.parse_obj(json_data["data"])
+
+    async def enable_charger(self, charge_point_id: str, connector_id: int | str = 1):
+        await self.set_charger_availability(
+            charge_point_id=charge_point_id, available=True, connector_id=connector_id
+        )
+
+    async def disable_charger(self, charge_point_id: str, connector_id: int | str = 1):
+        await self.set_charger_availability(
+            charge_point_id=charge_point_id, available=False, connector_id=connector_id
+        )
+
+    async def set_charger_availability(
+        self,
+        charge_point_id: str,
+        available: bool = True,
+        connector_id: int | str = 1,
+        timeout=10,
+    ) -> EvnexCommandResponse:
+        """
+        Change availability of charger.
+
+        If the charger support multiple connectors, you can disable a specific connector.
+
+        When a charge point is disabled the Charge Point Detail will include:
+            ocppStatus: "UNAVAILABLE"
+            ocppCode: "NoError"
+        """
+        availability = "Operative" if available else "Inoperative"
+        logger.info(f"Changing connector {connector_id} to {availability}")
+        r = await self.httpx_client.post(
+            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
+            headers=self._common_headers,
+            json={"connectorId": connector_id, "changeAvailabilityType": availability},
+            timeout=timeout,
+        )
+        json_data = await self._check_api_response(r)
+
+        return EvnexCommandResponseV3.parse_obj(json_data["data"])
+
+    async def unlock_charger(
+        self,
+        charge_point_id: str,
+        available: bool = True,
+        connector_id: str = "0",
+        timeout=10,
+    ) -> EvnexCommandResponse:
+        """
+        Unlock charger.
+
+        Only relevant for socketed chargers, this tells the charger to try to retract the pin which
+        locks a cable in place (at the charger end) for the duration of a transaction. Some sockets
+        have a sensor to tell them whether this has been successful or not, but some don’t, so they
+        always report success when it might not have actually worked.
+
+        Note this also serves to re-enable a disabled charger.
+        """
+        availability = "Operative" if available else "Inoperative"
+        logger.info(f"Changing connector {connector_id} to {availability}")
+        r = await self.httpx_client.post(
+            f"https://client-api.evnex.io/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/unlock-connector",
+            headers=self._common_headers,
+            json={"connectorId": connector_id, "changeAvailabilityType": availability},
+            timeout=timeout,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexCommandResponse.parse_obj(json_data["data"])
+
+    async def set_charger_load_profile(
+        self,
+        charge_point_id: str,
+        charging_profile_periods: list[EvnexChargeProfileSegment | dict[str, int]],
+        enabled: bool = True,
+        duration: int = 86400,
+        units: str = "A",
+        timeout=10,
+    ) -> EvnexChargePointLoadSchedule:
+        """
+        Set a load management profile for the charger.
+
+        Used to control the maximum output of a charge point.
+        """
+        logger.info(f"Applying load management profile")
+        # Parse and validate the input
+        schedule = [
+            segment.dict()
+            for segment in pydantic.parse_obj_as(
+                list[EvnexChargeProfileSegment], charging_profile_periods
+            )
+        ]
+
+        r = await self.httpx_client.put(
+            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/load-management",
+            headers=self._common_headers,
+            json={
+                "chargingProfilePeriods": schedule,
+                "enabled": enabled,
+                "units": units,
+                "duration": duration,
+            },
+            timeout=timeout,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexChargePointLoadSchedule.parse_obj(json_data["data"])
+
+    async def set_charge_point_schedule(
+        self,
+        charge_point_id: str,
+        charging_profile_periods: list[EvnexChargeProfileSegment | dict[str, int]],
+        enabled: bool = True,
+        duration: int = 86400,
+        timeout=10,
+    ) -> EvnexChargePointLoadSchedule:
+        """
+        Configure times that a charge point will charge between.
+        Defaults to setting a daily period. Specify segments using seconds from midnight (using configured timezone).
+
+        [
+          {"start": 0, "limit": 0},
+          {"start": 3600, "limit": 32},
+          {"start": 4500, "limit": 0}
+        ]
+        """
+        logger.info(f"Applying load management profile")
+        # Parse and validate the input
+        schedule = [
+            segment.dict()
+            for segment in pydantic.parse_obj_as(
+                list[EvnexChargeProfileSegment], charging_profile_periods
+            )
+        ]
+
+        r = await self.httpx_client.put(
+            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/charge-schedule",
+            headers=self._common_headers,
+            json={
+                "chargingProfilePeriods": schedule,
+                "enabled": enabled,
+                # "units": "A",
+                "duration": duration,
+                # "timezone": timezone,
+            },
+            timeout=timeout,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexChargePointLoadSchedule.parse_obj(json_data["data"])

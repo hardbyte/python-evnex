@@ -1,6 +1,8 @@
 name: Continuous Integration
 
 on:
+  release:
+    types: [ published ]
   push:
     branches:
       - main
@@ -23,9 +25,11 @@ jobs:
           filter_mode: diff_context
           glob_pattern: "**/*.py"
           pylint_args: "--disable=all, --enable=unused-import"
+      - name: Check formatting
+        uses: psf/black@stable
 
-  test:
-    name: Run tests
+  build:
+    name: Build Python Package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -50,8 +54,31 @@ jobs:
       # install dependencies if cache does not exist
       - name: Install dependencies
         if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction --no-root
-      - name: Check formatting
-        uses: psf/black@stable
-      #- name: Unit Test
-      #  run: poetry run pytest
+        run: |
+          poetry install --no-interaction --no-root
+          poetry show --tree
+      - name: Build Package
+        run: poetry build
+      - name: Save artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-evnex
+          path: ./dist
+
+  release:
+    name: Release to PyPi
+    needs: [build]
+    runs-on: ubuntu-latest
+
+    # upload to PyPI only on release
+    if: github.event.release && github.event.action == 'published'
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: python-evnex
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@v1.6.1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
