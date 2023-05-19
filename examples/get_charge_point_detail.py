@@ -25,7 +25,7 @@ async def main():
     print("User:", user_data.name, user_data.email, user_data.id)
 
     for org in user_data.organisations:
-        print("Getting charge points for", org.name)
+        print(f"Getting charge points for '{org.name}'")
         charge_points = await evnex.get_org_charge_points(org_id=org.slug)
 
         for charge_point in charge_points:
