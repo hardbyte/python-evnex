@@ -1,9 +1,24 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field
 
-from evnex.schema.v3.cost import EvnexElectricityCost
+from evnex.schema.v3.cost import EvnexElectricityCost, EvnexElectricityCostTotal
+from evnex.schema.v3.relationships import EvnexRelationships
+
+
+class EvnexEnergyTransaction(BaseModel):
+    meterStart: float
+    startDate: datetime
+    meterStop: float | None
+    endDate: datetime | None
+    reason: str | None
+
+
+class EvnexEnergyUsage(BaseModel):
+    total: float
+    distributionByTariff: Any
+    distributionByEnergySource: Any
 
 
 class EvnexChargeSchedulePeriod(BaseModel):
@@ -61,3 +76,35 @@ class EvnexChargePointDetail(BaseModel):
     tokenRequired: bool
     updatedDate: datetime
     vendor: str
+
+
+class EvnexChargePointSessionAttributes(BaseModel):
+    totalCarbonUsage: float | None
+    chargingStarted: datetime | None
+    chargingStopped: datetime | None
+    connectorId: str | None
+    createdDate: datetime | None
+    evseId: str | None
+    sessionStatus: str | None
+    startDate: datetime | None
+    updatedDate: datetime | None
+    authorizationMethod: str | None
+    electricityCost: EvnexElectricityCost | None
+    endDate: datetime | None
+    totalChargingTime: float | None
+    totalDuration: float | None
+    totalEnergyUsage: EvnexEnergyUsage | None
+    totalCost: EvnexElectricityCostTotal | None
+    totalPowerUsage: float | None
+    transaction: EvnexEnergyTransaction | None
+
+
+class EvnexChargePointSession(BaseModel):
+    attributes: EvnexChargePointSessionAttributes
+    id: str
+    type: str
+    relationships: EvnexRelationships | None
+
+
+class EvnexGetChargePointSessionsResponse(BaseModel):
+    data: list[EvnexChargePointSession]

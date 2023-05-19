@@ -26,7 +26,7 @@ async def main():
 
     for org in user_data.organisations:
         print(f"Getting charge points for '{org.name}'")
-        charge_points = await evnex.get_org_charge_points(org_id=org.id)
+        charge_points = await evnex.get_org_charge_points(org_id=org.slug)
 
         for charge_point in charge_points:
             print(
@@ -74,12 +74,12 @@ async def main():
 
             print()
             print("Getting transactions")
-            transactions = await evnex.get_charge_point_transactions(
+            transactions = await evnex.get_charge_point_sessions(
                 charge_point_id=charge_point.id
             )
             print(len(transactions), "transactions")
 
-            if len(transactions) and transactions[0].endDate is None:
+            if len(transactions) and transactions[0].attributes.endDate is None:
                 print("Active Charging Session")
                 print(transactions[0])
                 # print("Stopping charge point - will require plugging vehicle back in manually")

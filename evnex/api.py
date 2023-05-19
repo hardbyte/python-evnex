@@ -17,17 +17,19 @@ from evnex.schema.charge_points import (
     EvnexChargePointLoadSchedule,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
-    EvnexChargePointTransaction,
     EvnexChargeProfileSegment,
+    EvnexChargePointTransaction,
+    EvnexGetChargePointTransactionsResponse,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
-    EvnexGetChargePointTransactionsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
+    EvnexGetChargePointSessionsResponse,
+    EvnexChargePointSession,
 )
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
@@ -296,6 +298,11 @@ class Evnex:
     async def get_charge_point_transactions(
         self, charge_point_id: str
     ) -> list[EvnexChargePointTransaction]:
+        warn(
+            "This method is deprecated. See get_charge_point_sessions",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Similar to f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions',
 
         r = await self.httpx_client.get(
@@ -303,8 +310,21 @@ class Evnex:
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-
         return EvnexGetChargePointTransactionsResponse(**json_data).data.items
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+    )
+    async def get_charge_point_sessions(
+        self, charge_point_id: str
+    ) -> list[EvnexChargePointSession]:
+        r = await self.httpx_client.get(
+            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions",
+            headers=self._common_headers,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexGetChargePointSessionsResponse.parse_obj(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
+## 0.3.5 - 2023-05-20
+
+Migrate off v2 transactions api.
+
+## 0.3.4 - 2023-05-15
+
+Relax dependencies to be compatible with home assistant, tighten requirements on boto3 for faster resolution.
+
 ## 0.3.3 - 2022-11-28
 
 ### Changed
