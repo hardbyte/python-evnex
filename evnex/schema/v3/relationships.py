@@ -9,7 +9,7 @@ class EvnexRelationship(BaseModel):
 
 
 class EvnexRelationshipWrapper(BaseModel):
-    data: EvnexRelationship
+    data: Optional[EvnexRelationship]
 
 
 class EvnexRelationships(BaseModel):
