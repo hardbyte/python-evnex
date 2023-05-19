@@ -14,16 +14,16 @@ from evnex.schema.charge_points import (
     EvnexChargePointDetail,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
-    EvnexChargePointTransaction,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
-    EvnexGetChargePointTransactionsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
+    EvnexGetChargePointSessionsResponse,
+    EvnexChargePointSessions,
 )
 from evnex.schema.v3.generic import EvnexV3APIResponse
 
@@ -192,7 +192,6 @@ class Evnex:
     async def get_charge_point_detail(
         self, charge_point_id: str
     ) -> EvnexChargePointDetail:
-
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}",
             headers=self._common_headers,
@@ -207,7 +206,6 @@ class Evnex:
     async def get_charge_point_detail_v3(
         self, charge_point_id: str
     ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
-
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}",
             headers=self._common_headers,
@@ -277,16 +275,15 @@ class Evnex:
     )
     async def get_charge_point_transactions(
         self, charge_point_id: str
-    ) -> list[EvnexChargePointTransaction]:
+    ) -> list[EvnexChargePointSessions]:
         # Similar to f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions',
 
         r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/transactions",
+            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions",
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-
-        return EvnexGetChargePointTransactionsResponse(**json_data).data.items
+        return EvnexGetChargePointSessionsResponse.parse_obj(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),

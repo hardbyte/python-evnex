@@ -13,5 +13,6 @@ class EvnexRelationshipWrapper(BaseModel):
 
 
 class EvnexRelationships(BaseModel):
+    chargePoint: Optional[EvnexRelationshipWrapper]
     location: Optional[EvnexRelationshipWrapper]
     organisation: Optional[EvnexRelationshipWrapper]

@@ -21,7 +21,7 @@ async def main():
 
     for org in user_data.organisations:
         print("Getting 7 day insight for", org.name, "User:", user_data.name)
-        daily_insights = await evnex.get_org_insight(days=7, org_id=org.id)
+        daily_insights = await evnex.get_org_insight(days=7, org_id=org.slug)
 
         for segment in daily_insights:
             print(segment)

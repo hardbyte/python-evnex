@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -11,4 +13,10 @@ class EvnexElectricityCost(BaseModel):
     currency: str  # NZD
     tariffs: list[EvnexElectricityTariff]
     tariffType: str
-    cost: float
+    cost: float | None
+
+
+class EvnexElectricityCostTotal(BaseModel):
+    currency: str  # NZD
+    amount: float
+    distribution: Any
