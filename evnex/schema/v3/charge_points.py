@@ -78,7 +78,7 @@ class EvnexChargePointDetail(BaseModel):
     vendor: str
 
 
-class EvnexChargePointSession(BaseModel):
+class EvnexChargePointSessionAttributes(BaseModel):
     totalCarbonUsage: float | None
     chargingStarted: datetime | None
     chargingStopped: datetime | None
@@ -99,12 +99,12 @@ class EvnexChargePointSession(BaseModel):
     transaction: EvnexEnergyTransaction | None
 
 
-class EvnexChargePointSessions(BaseModel):
-    attributes: EvnexChargePointSession
+class EvnexChargePointSession(BaseModel):
+    attributes: EvnexChargePointSessionAttributes
     id: str
     type: str
     relationships: EvnexRelationships | None
 
 
 class EvnexGetChargePointSessionsResponse(BaseModel):
-    data: list[EvnexChargePointSessions]
+    data: list[EvnexChargePointSession]

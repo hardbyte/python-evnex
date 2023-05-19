@@ -74,7 +74,7 @@ async def main():
 
             print()
             print("Getting transactions")
-            transactions = await evnex.get_charge_point_transactions(
+            transactions = await evnex.get_charge_point_sessions(
                 charge_point_id=charge_point.id
             )
             print(len(transactions), "transactions")
