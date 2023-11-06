@@ -17,16 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dciborow/action-pylint@0.1.1
-        with:
-          github_token: ${{ secrets.github_token }}
-          # GitHub Status Check won't become failure with warning.
-          level: warning
-          filter_mode: diff_context
-          glob_pattern: "**/*.py"
-          pylint_args: "--disable=all, --enable=unused-import"
       - name: Check formatting
-        uses: psf/black@stable
+        uses: chartboost/ruff-action@v1
 
   build:
     name: Build Python Package

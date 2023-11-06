@@ -443,7 +443,7 @@ class Evnex:
 
         Used to control the maximum output of a charge point.
         """
-        logger.info(f"Applying load management profile")
+        logger.info("Applying load management profile")
         # Parse and validate the input
         schedule = [
             segment.dict()
@@ -484,7 +484,7 @@ class Evnex:
           {"start": 4500, "limit": 0}
         ]
         """
-        logger.info(f"Applying load management profile")
+        logger.info("Applying load management profile")
         # Parse and validate the input
         schedule = [
             segment.dict()
