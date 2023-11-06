@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
+## 0.3.6 - 2023-11-06
+
+Dependency updates.
+
 ## 0.3.5 - 2023-05-20
 
 Migrate off v2 transactions api.
