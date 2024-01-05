@@ -12,12 +12,13 @@ issues = "https://github.com/hardbyte/python-evnex/issues"
 
 
 [tool.poetry.dependencies]
-python = ">=3.10"
-httpx = ">=0.23,<0.26"
+python = "^3.11"
+httpx = "^0.26"
 pycognito = "2023.5.0"
 boto3 = "^1.26"
-pydantic = "^1.10"
+pydantic = "^2.5"
 tenacity = "^8.1"
+pydantic-settings = "^2.1.0"
 
 
 [tool.poetry.dev-dependencies]

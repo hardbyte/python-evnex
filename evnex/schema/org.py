@@ -14,7 +14,7 @@ class EvnexOrgBrief(BaseModel):
     name: str
     slug: str
     tier: int
-    tierDetails: Any
+    tierDetails: Any = None
     updatedDate: datetime
 
 

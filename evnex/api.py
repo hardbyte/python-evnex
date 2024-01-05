@@ -7,7 +7,7 @@ import botocore
 import pydantic
 from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
-from pydantic import BaseSettings, HttpUrl, ValidationError
+from pydantic import HttpUrl, ValidationError
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
 
 from evnex.errors import NotAuthorizedException
@@ -33,6 +33,7 @@ from evnex.schema.v3.charge_points import (
 )
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
+from pydantic_settings import BaseSettings
 
 logger = logging.getLogger("evnex.api")
 
