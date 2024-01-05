@@ -24,7 +24,6 @@ pydantic-settings = "^2.1.0"
 [tool.poetry.dev-dependencies]
 black = "^23"
 isort = "^5.10.1"
-pylint = "^2.15"
 pytest = "^7.1"
 pre-commit = "^3"
 
