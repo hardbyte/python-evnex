@@ -9,7 +9,7 @@ class EvnexChargePointConnectorMeter(BaseModel):
     powerType: str  # "AC_1_PHASE"
     updatedDate: datetime
     power: float
-    _register: float = Field(alias="register")
+    register: float
     frequency: float
 
 
@@ -20,10 +20,10 @@ class Coordinates(BaseModel):
 
 class EvnexAddress(BaseModel):
     address1: str
-    address2: str | None
-    city: str | None
-    postCode: str | None
-    state: str | None
+    address2: str | None = None
+    city: str | None = None
+    postCode: str | None = None
+    state: str | None = None
     country: str
 
 
@@ -32,8 +32,8 @@ class EvnexLocation(BaseModel):
     name: str
     createdDate: datetime
     updatedDate: datetime
-    address: EvnexAddress | None
-    coordinates: Coordinates | None
+    address: EvnexAddress | None = None
+    coordinates: Coordinates | None = None
     chargePointCount: int
 
 
@@ -85,8 +85,8 @@ class EvnexChargePointBase(BaseModel):
 
 class EvnexChargePoint(EvnexChargePointBase):
     details: EvnexChargePointDetails
-    connectors: list[EvnexChargePointConnector] | None
-    lastHeard: datetime | None
+    connectors: list[EvnexChargePointConnector] | None = None
+    lastHeard: datetime | None = None
     maxCurrent: float
     tokenRequired: bool
     needsRegistrationInformation: bool
@@ -112,7 +112,7 @@ class EvnexChargeProfileSegment(BaseModel):
 
 class EvnexElectricityCost(BaseModel):
     currency: str
-    duration: int | None
+    duration: int | None = None
     costs: list[EvnexElectricityCostSegment]
 
 
@@ -143,13 +143,13 @@ class EvnexGetChargePointDetailResponse(BaseModel):
 class EvnexChargePointTransaction(BaseModel):
     id: str
     connectorId: str
-    endDate: datetime | None
+    endDate: datetime | None = None
     evseId: str
     powerUsage: float
-    reason: str | None  # EVDisconnected, Other
+    reason: str | None = None  # EVDisconnected, Other
     startDate: datetime
-    carbonOffset: float | None
-    electricityCost: EvnexCost | None
+    carbonOffset: float | None = None
+    electricityCost: EvnexCost | None = None
 
 
 class EvnexChargePointTransactions(BaseModel):

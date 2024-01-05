@@ -13,10 +13,10 @@ class EvnexElectricityCost(BaseModel):
     currency: str  # NZD
     tariffs: list[EvnexElectricityTariff]
     tariffType: str
-    cost: float | None
+    cost: float | None = None
 
 
 class EvnexElectricityCostTotal(BaseModel):
     currency: str  # NZD
     amount: float
-    distribution: Any
+    distribution: Any = None
