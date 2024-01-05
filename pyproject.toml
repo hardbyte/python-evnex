@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "evnex"
-version = "0.3.6"
+version = "0.3.7"
 description = "A Python wrapper for the EVNEX Cloud API"
 authors = ["Brian Thorne <brian@hardbyte.nz>"]
 readme = "README.md"
@@ -22,7 +22,6 @@ pydantic-settings = "^2.1.0"
 
 
 [tool.poetry.dev-dependencies]
-black = "^23"
 isort = "^5.10.1"
 pytest = "^7.1"
 pre-commit = "^3"
