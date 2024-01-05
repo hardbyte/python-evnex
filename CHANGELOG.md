@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
-## 0.3.7 - 2024-01-05
+## 0.3.8 - 2024-01-05
 
 Update dependencies to work with homeassistant 2024.
 
