@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from evnex.schema.v3.cost import EvnexElectricityCost, EvnexElectricityCostTotal
 from evnex.schema.v3.relationships import EvnexRelationships
@@ -39,7 +39,7 @@ class EvnexChargePointConnectorMeter(BaseModel):
     currentL1: Optional[float] = None
     frequency: float
     power: float
-    register: float
+    raw_register: float = Field(..., alias="register")
     updatedDate: datetime
     voltageL1N: Optional[float] = None
 

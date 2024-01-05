@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from evnex.schema.cost import EvnexCost
 
@@ -9,7 +9,7 @@ class EvnexChargePointConnectorMeter(BaseModel):
     powerType: str  # "AC_1_PHASE"
     updatedDate: datetime
     power: float
-    register: float
+    raw_register: float = Field(..., alias="register")
     frequency: float
 
 
