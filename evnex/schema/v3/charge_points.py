@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from evnex.schema.v3.cost import EvnexElectricityCost, EvnexElectricityCostTotal
 from evnex.schema.v3.relationships import EvnexRelationships
