@@ -4,5 +4,5 @@ from pydantic import BaseModel
 
 
 class EvnexCommandResponse(BaseModel):
-    message: Optional[str] = None
+    message: Optional[str]
     status: str  # Accepted

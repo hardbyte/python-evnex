@@ -1,8 +1,8 @@
 import asyncio
 import logging
 
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+from pydantic import BaseSettings, SecretStr
+
 from evnex.api import Evnex
 
 logging.basicConfig(level=logging.WARNING)
@@ -59,11 +59,11 @@ async def main():
             )
             print(override)
 
-            # print("Solar Config")
-            # solar_config = await evnex.get_charge_point_solar_config(
-            #     charge_point_id=charge_point.id
-            # )
-            # print(solar_config)
+            print("Solar Config")
+            solar_config = await evnex.get_charge_point_solar_config(
+                charge_point_id=charge_point.id
+            )
+            print(solar_config)
 
             # print(f"Setting charge override setting to {'off' if override.chargeNow else 'on'}")
             # await evnex.set_charge_point_override(charge_point_id=charge_point.id,
@@ -80,12 +80,12 @@ async def main():
             print(len(transactions), "transactions")
 
             if len(transactions) and transactions[0].attributes.endDate is None:
-                print("Active Charging Session:")
+                print("Active Charging Session")
                 print(transactions[0])
                 # print("Stopping charge point - will require plugging vehicle back in manually")
                 # print(await evnex.stop_charge_point(charge_point_id=charge_points[0].id))
             else:
-                print("Last charging session:")
+                print("Last charging session")
                 print(transactions[0])
 
 

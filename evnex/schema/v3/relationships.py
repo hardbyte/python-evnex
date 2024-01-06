@@ -9,10 +9,10 @@ class EvnexRelationship(BaseModel):
 
 
 class EvnexRelationshipWrapper(BaseModel):
-    data: Optional[EvnexRelationship] = None
+    data: Optional[EvnexRelationship]
 
 
 class EvnexRelationships(BaseModel):
-    chargePoint: Optional[EvnexRelationshipWrapper] = None
-    location: Optional[EvnexRelationshipWrapper] = None
-    organisation: Optional[EvnexRelationshipWrapper] = None
+    chargePoint: Optional[EvnexRelationshipWrapper]
+    location: Optional[EvnexRelationshipWrapper]
+    organisation: Optional[EvnexRelationshipWrapper]
