@@ -1,7 +1,10 @@
 import asyncio
 import logging
 
-from pydantic import BaseSettings, SecretStr
+try:
+    from pydantic.v1 import BaseSettings, SecretStr
+except ImportError:
+    from pydantic import BaseSettings, SecretStr
 
 from evnex.api import Evnex
 

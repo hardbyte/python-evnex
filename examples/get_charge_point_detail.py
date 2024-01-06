@@ -1,7 +1,10 @@
 import asyncio
 import logging
 
-from pydantic import BaseSettings, SecretStr
+try:
+    from pydantic.v1 import BaseSettings, SecretStr
+except ImportError:
+    from pydantic import BaseSettings, SecretStr
 
 from evnex.api import Evnex
 
@@ -59,11 +62,11 @@ async def main():
             )
             print(override)
 
-            print("Solar Config")
-            solar_config = await evnex.get_charge_point_solar_config(
-                charge_point_id=charge_point.id
-            )
-            print(solar_config)
+            # print("Solar Config")
+            # solar_config = await evnex.get_charge_point_solar_config(
+            #     charge_point_id=charge_point.id
+            # )
+            # print(solar_config)
 
             # print(f"Setting charge override setting to {'off' if override.chargeNow else 'on'}")
             # await evnex.set_charge_point_override(charge_point_id=charge_point.id,

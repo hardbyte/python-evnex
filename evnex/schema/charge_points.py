@@ -1,6 +1,9 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+try:
+    from pydantic.v1 import BaseModel, Field
+except ImportError:
+    from pydantic import BaseModel, Field
 
 from evnex.schema.cost import EvnexCost
 

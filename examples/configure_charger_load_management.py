@@ -1,11 +1,14 @@
 import asyncio
 import logging
 
-from pydantic import BaseSettings, SecretStr
+try:
+    from pydantic.v1 import BaseSettings, SecretStr
+except ImportError:
+    from pydantic import BaseSettings, SecretStr
 
 from evnex.api import Evnex
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 
 class EvnexAuthDetails(BaseSettings):
@@ -24,7 +27,7 @@ async def main():
     for org in user_data.organisations:
         print("Getting charge points for", org.name)
         charge_points = await evnex.get_org_charge_points(org_id=org.id)
-
+        print(f"Got {len(charge_points)} charge points")
         for charge_point in charge_points:
             detail = await evnex.get_charge_point_detail_v3(
                 charge_point_id=charge_point.id

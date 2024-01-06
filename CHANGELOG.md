@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
+## 0.3.9 - 2024-01-06
+
+Added shims to support Pydantic v1 and v2.
+
 ## 0.3.8 - 2024-01-05
 
 Update dependencies to work with homeassistant 2024.

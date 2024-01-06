@@ -4,10 +4,17 @@ from typing import Optional
 from warnings import warn
 
 import botocore
-import pydantic
+
 from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
-from pydantic import BaseSettings, HttpUrl, ValidationError
+
+try:
+    from pydantic import v1 as pydantic
+    from pydantic.v1 import BaseSettings, HttpUrl, ValidationError
+except ImportError:
+    import pydantic
+    from pydantic import BaseSettings, HttpUrl, ValidationError
+
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
 
 from evnex.errors import NotAuthorizedException
@@ -220,7 +227,9 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type(
+            (TypeError, ValidationError, NotAuthorizedException)
+        ),
     )
     async def get_charge_point_detail_v3(
         self, charge_point_id: str

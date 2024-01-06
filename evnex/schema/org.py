@@ -1,7 +1,10 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+try:
+    from pydantic.v1 import BaseModel
+except ImportError:
+    from pydantic import BaseModel
 
 from evnex.schema.cost import EvnexCost
 

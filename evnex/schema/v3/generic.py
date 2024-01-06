@@ -1,7 +1,12 @@
 from typing import Generic, Optional, TypeVar
 
-from pydantic import BaseModel
-from pydantic.generics import GenericModel
+try:
+    from pydantic.v1 import BaseModel
+
+    GenericModel = BaseModel
+except ImportError:
+    from pydantic import BaseModel
+    from pydantic.generics import GenericModel
 
 from evnex.schema.v3.relationships import EvnexRelationships
 
