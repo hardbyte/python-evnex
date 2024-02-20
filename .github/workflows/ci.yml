@@ -16,7 +16,7 @@ jobs:
     name: Code Analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Check formatting
         uses: chartboost/ruff-action@v1
 
@@ -24,7 +24,7 @@ jobs:
     name: Build Python Package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
