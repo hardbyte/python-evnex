@@ -1,9 +1,7 @@
 from datetime import datetime
+from typing import Literal
 
-try:
-    from pydantic.v1 import BaseModel, Field
-except ImportError:
-    from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 
 from evnex.schema.cost import EvnexCost
 
@@ -70,7 +68,7 @@ class EvnexChargePointSolarConfig(BaseModel):
 
 
 class EvnexChargePointOverrideConfig(BaseModel):
-    chargeNow: bool
+    chargeNow: bool | Literal['NotSupported']
 
 
 class EvnexChargePointBase(BaseModel):

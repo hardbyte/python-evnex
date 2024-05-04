@@ -1,11 +1,8 @@
 import asyncio
 import logging
 
-try:
-    from pydantic.v1 import BaseSettings, SecretStr
-except ImportError:
-    from pydantic import BaseSettings, SecretStr
-
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings
 from evnex.api import Evnex
 
 logging.basicConfig(level=logging.WARNING)
@@ -83,12 +80,12 @@ async def main():
             print(len(transactions), "transactions")
 
             if len(transactions) and transactions[0].attributes.endDate is None:
-                print("Active Charging Session")
+                print("Active Charging Session:")
                 print(transactions[0])
                 # print("Stopping charge point - will require plugging vehicle back in manually")
                 # print(await evnex.stop_charge_point(charge_point_id=charge_points[0].id))
             else:
-                print("Last charging session")
+                print("Last charging session:")
                 print(transactions[0])
 
 

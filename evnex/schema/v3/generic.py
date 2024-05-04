@@ -1,14 +1,7 @@
 from typing import Generic, Optional, TypeVar
-
-try:
-    from pydantic.v1 import BaseModel
-
-    GenericModel = BaseModel
-except ImportError:
-    from pydantic import BaseModel
-    from pydantic.generics import GenericModel
-
+from pydantic import BaseModel
 from evnex.schema.v3.relationships import EvnexRelationships
+
 
 ResponseDataT = TypeVar("ResponseDataT")
 
@@ -19,13 +12,13 @@ class EvnexV3Include(BaseModel):
     attributes: dict
 
 
-class EvnexV3Data(GenericModel, Generic[ResponseDataT]):
+class EvnexV3Data(BaseModel, Generic[ResponseDataT]):
     id: str
     type: str
     attributes: ResponseDataT
     relationships: EvnexRelationships
 
 
-class EvnexV3APIResponse(GenericModel, Generic[ResponseDataT]):
+class EvnexV3APIResponse(BaseModel, Generic[ResponseDataT]):
     data: EvnexV3Data[ResponseDataT]
     included: Optional[list[EvnexV3Include]]
