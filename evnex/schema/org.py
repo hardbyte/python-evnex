@@ -1,10 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-try:
-    from pydantic.v1 import BaseModel
-except ImportError:
-    from pydantic import BaseModel
+from pydantic import BaseModel
 
 from evnex.schema.cost import EvnexCost
 
@@ -17,7 +14,7 @@ class EvnexOrgBrief(BaseModel):
     name: str
     slug: str
     tier: int
-    tierDetails: Any
+    tierDetails: Any = None
     updatedDate: datetime
 
 

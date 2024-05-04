@@ -2,10 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-try:
-    from pydantic.v1 import BaseModel
-except ImportError:
-    from pydantic import BaseModel
+from pydantic import BaseModel
 
 from evnex.schema.org import EvnexOrgBrief
 

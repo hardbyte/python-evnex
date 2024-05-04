@@ -4,17 +4,11 @@ from typing import Optional
 from warnings import warn
 
 import botocore
-
+import pydantic
+from pydantic_core import from_json
 from httpx import AsyncClient, ReadTimeout
 from pycognito import Cognito
-
-try:
-    from pydantic import v1 as pydantic
-    from pydantic.v1 import BaseSettings, HttpUrl, ValidationError
-except ImportError:
-    import pydantic
-    from pydantic import BaseSettings, HttpUrl, ValidationError
-
+from pydantic import HttpUrl, ValidationError
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
 
 from evnex.errors import NotAuthorizedException
@@ -40,6 +34,7 @@ from evnex.schema.v3.charge_points import (
 )
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
+from pydantic_settings import BaseSettings
 
 logger = logging.getLogger("evnex.api")
 
@@ -141,7 +136,7 @@ class Evnex:
             "https://client-api.evnex.io/v2/apps/user", headers=self._common_headers
         )
         response_json = await self._check_api_response(response)
-        data = EvnexGetUserResponse(**response_json).data
+        data = EvnexGetUserResponse.model_validate(response_json).data
 
         # Make the assumption that most end users are only in one org
         if len(data.organisations):
@@ -164,7 +159,7 @@ class Evnex:
         response.raise_for_status()
 
         try:
-            return response.json()
+            return from_json(response.text)
         except:
             logger.debug(
                 f"Invalid json response.\n{response.status_code}\n{response.text}"
@@ -186,7 +181,7 @@ class Evnex:
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointsResponse(**json_data).data.items
+        return EvnexGetChargePointsResponse.model_validate(json_data).data.items
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -204,7 +199,7 @@ class Evnex:
             params={"days": days},
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetOrgInsightResponse.parse_obj(json_data).data.items
+        return EvnexGetOrgInsightResponse.model_validate(json_data).data.items
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -223,7 +218,7 @@ class Evnex:
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointDetailResponse(**json_data).data
+        return EvnexGetChargePointDetailResponse.model_validate(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -242,7 +237,8 @@ class Evnex:
             f"Raw get charge point detail response.\n{r.status_code}\n{r.text}"
         )
         json_data = await self._check_api_response(r)
-        return EvnexV3APIResponse[EvnexChargePointDetailV3](**json_data)
+
+        return EvnexV3APIResponse[EvnexChargePointDetailV3].model_validate(json_data)
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -261,7 +257,7 @@ class Evnex:
         )
         json_data = await self._check_api_response(r)
 
-        return EvnexChargePointSolarConfig(**json_data)
+        return EvnexChargePointSolarConfig.model_validate(json_data)
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -283,7 +279,7 @@ class Evnex:
             timeout=15,
         )
         json_data = await self._check_api_response(r)
-        return EvnexChargePointOverrideConfig(**json_data)
+        return EvnexChargePointOverrideConfig.model_validate(json_data)
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -319,7 +315,7 @@ class Evnex:
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointTransactionsResponse(**json_data).data.items
+        return EvnexGetChargePointTransactionsResponse.model_validate(json_data).data.items
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -333,7 +329,7 @@ class Evnex:
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointSessionsResponse.parse_obj(json_data).data
+        return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -370,7 +366,7 @@ class Evnex:
         )
         json_data = await self._check_api_response(r)
 
-        return EvnexCommandResponse.parse_obj(json_data["data"])
+        return EvnexCommandResponse.model_validate(json_data["data"])
 
     async def enable_charger(self, charge_point_id: str, connector_id: int | str = 1):
         await self.set_charger_availability(
@@ -408,7 +404,7 @@ class Evnex:
         )
         json_data = await self._check_api_response(r)
 
-        return EvnexCommandResponseV3.parse_obj(json_data["data"])
+        return EvnexCommandResponseV3.model_validate(json_data["data"])
 
     async def unlock_charger(
         self,
@@ -436,7 +432,7 @@ class Evnex:
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
-        return EvnexCommandResponse.parse_obj(json_data["data"])
+        return EvnexCommandResponse.model_validate(json_data["data"])
 
     async def set_charger_load_profile(
         self,
@@ -473,7 +469,7 @@ class Evnex:
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
-        return EvnexChargePointLoadSchedule.parse_obj(json_data["data"])
+        return EvnexChargePointLoadSchedule.model_validate(json_data["data"])
 
     async def set_charge_point_schedule(
         self,
@@ -515,4 +511,4 @@ class Evnex:
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
-        return EvnexChargePointLoadSchedule.parse_obj(json_data["data"])
+        return EvnexChargePointLoadSchedule.model_validate(json_data["data"])
