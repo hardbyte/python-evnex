@@ -68,7 +68,7 @@ class EvnexChargePointSolarConfig(BaseModel):
 
 
 class EvnexChargePointOverrideConfig(BaseModel):
-    chargeNow: bool | Literal['NotSupported']
+    chargeNow: bool | Literal["NotSupported"]
 
 
 class EvnexChargePointBase(BaseModel):
