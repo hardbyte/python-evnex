@@ -315,7 +315,9 @@ class Evnex:
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointTransactionsResponse.model_validate(json_data).data.items
+        return EvnexGetChargePointTransactionsResponse.model_validate(
+            json_data
+        ).data.items
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
