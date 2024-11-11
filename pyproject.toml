@@ -17,7 +17,7 @@ httpx = ">=0.23"
 pycognito = ">=2023.5.0,<2025"
 boto3 = "^1.26"
 pydantic = ">2.0.0,<3.0.0"
-tenacity = "^8.1"
+tenacity = ">=8.1,<10.0"
 pydantic-settings = "^2.2"
 
 
