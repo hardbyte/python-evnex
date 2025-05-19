@@ -2,5 +2,5 @@ from pydantic import BaseModel
 
 
 class EvnexCost(BaseModel):
-    currency: str
-    cost: float
+    currency: str = None
+    cost: float = None
