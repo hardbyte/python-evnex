@@ -54,6 +54,7 @@ profile_default/
 ipython_config.py
 .pdm.toml
 __pypackages__/
+uv.lock
 celerybeat-schedule
 celerybeat.pid
 *.sage.py
