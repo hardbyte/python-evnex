@@ -25,7 +25,11 @@ from evnex.schema.charge_points import (
     EvnexGetChargePointsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
-from evnex.schema.org import EvnexGetOrgInsightResponse, EvnexOrgInsightEntry
+from evnex.schema.org import (
+    EvnexOrgInsightEntry,
+    EvnexGetOrgSummaryStatusResponse,
+    EvnexGetOrgInsights,
+)
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
@@ -35,6 +39,8 @@ from evnex.schema.v3.charge_points import (
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
 from pydantic_settings import BaseSettings
+
+from schema.org import EvnexOrgSummaryStatus
 
 logger = logging.getLogger("evnex.api")
 
@@ -188,18 +194,37 @@ class Evnex:
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_insight(
-        self, days: int, org_id: Optional[str] = None
+        self, days: int, org_id: Optional[str] = None, tz_offset: int = 12
     ) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
         logger.debug("Getting org insight")
         r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/insights",
+            f"https://client-api.evnex.io/organisations/{org_id}/summary/insights",
             headers=self._common_headers,
-            params={"days": days},
+            params={"days": days, "tz-offset": tz_offset},
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetOrgInsightResponse.model_validate(json_data).data.items
+        validated_data = EvnexGetOrgInsights.model_validate(json_data).data
+
+        return [insight.attributes for insight in validated_data]
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+    )
+    async def get_org_summary_status(
+        self, org_id: Optional[str] = None
+    ) -> EvnexOrgSummaryStatus:
+        if org_id is None and self.org_id:
+            org_id = self.org_id
+        logger.debug("Getting org summary status")
+        r = await self.httpx_client.get(
+            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/status",
+            headers=self._common_headers,
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexGetOrgSummaryStatusResponse.model_validate(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -230,7 +255,7 @@ class Evnex:
         self, charge_point_id: str
     ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
         r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}",
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}",
             headers=self._common_headers,
         )
         logger.debug(
@@ -274,7 +299,7 @@ class Evnex:
         :raises: ReadTimeout if the charge point is offline.
         """
         r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-override",
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-override",
             headers=self._common_headers,
             timeout=15,
         )
@@ -327,7 +352,7 @@ class Evnex:
         self, charge_point_id: str
     ) -> list[EvnexChargePointSession]:
         r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions",
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/sessions",
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)

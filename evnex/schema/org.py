@@ -20,16 +20,30 @@ class EvnexOrgBrief(BaseModel):
 
 class EvnexOrgInsightEntry(BaseModel):
     carbonOffset: float
-    costs: list[EvnexCost]
+    cost: EvnexCost
     duration: int
     powerUsage: float
-    startDate: datetime
     sessions: int
+    startDate: datetime
+
+
+class EvnexInsightAttributeWrapper(BaseModel):
+    attributes: EvnexOrgInsightEntry
+
+
+class EvnexOrgSummaryStatus(BaseModel):
+    charging: int
+    available: int
+    disabled: int
+    faulted: int
+    occupied: int
+    offline: int
+    reserved: int
 
 
 class EvnexGetOrgInsights(BaseModel):
-    items: list[EvnexOrgInsightEntry]
+    data: list[EvnexInsightAttributeWrapper]
 
 
-class EvnexGetOrgInsightResponse(BaseModel):
-    data: EvnexGetOrgInsights
+class EvnexGetOrgSummaryStatusResponse(BaseModel):
+    data: EvnexOrgSummaryStatus
