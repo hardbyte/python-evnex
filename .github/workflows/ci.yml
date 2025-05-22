@@ -33,15 +33,13 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12" ]
+        python-version: ["3.12" ]
     steps:
       - uses: actions/checkout@v4
       - name: Install the latest version of uv and set the python version
         uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
-
-
       - name: Install dependencies
         run: uv sync
       - name: Build Package
@@ -49,21 +47,24 @@ jobs:
       - name: Save artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: python-evnex
+          name: release
           path: ./dist
 
   release:
     name: Release to PyPi
     needs: [build]
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      attestations: write
 
     # upload to PyPI only on release
     if: github.event.release && github.event.action == 'published'
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: python-evnex
           path: dist
+          merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@v1.8.11
         with:
