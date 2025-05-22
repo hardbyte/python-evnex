@@ -36,7 +36,7 @@ async def main():
                 charge_point_id=charge_point.id
             )
             print(detail)
-            await evnex.disable_charger(charge_point_id=charge_point.id)
+            await evnex.disable_charger(org_id=org.id, charge_point_id=charge_point.id)
             await asyncio.sleep(5)
             detail = await evnex.get_charge_point_detail_v3(
                 charge_point_id=charge_point.id
@@ -44,10 +44,10 @@ async def main():
             print(detail)
 
             print("Renabling")
-            await evnex.enable_charger(charge_point_id=charge_point.id)
+            await evnex.enable_charger(org_id=org.id, charge_point_id=charge_point.id)
 
             # Safe to repeat
-            await evnex.enable_charger(charge_point_id=charge_point.id)
+            await evnex.enable_charger(org_id=org.id, charge_point_id=charge_point.id)
 
 
 if __name__ == "__main__":
