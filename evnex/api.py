@@ -25,8 +25,11 @@ from evnex.schema.charge_points import (
     EvnexGetChargePointsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
-from evnex.schema.org import EvnexOrgInsightEntry, EvnexGetOrgSummaryStatusResponse, \
-    EvnexGetOrgInsights
+from evnex.schema.org import (
+    EvnexOrgInsightEntry,
+    EvnexGetOrgSummaryStatusResponse,
+    EvnexGetOrgInsights,
+)
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
@@ -204,7 +207,7 @@ class Evnex:
         json_data = await self._check_api_response(r)
         validated_data = EvnexGetOrgInsights.model_validate(json_data).data
 
-        return [insight.attributes for insight in  validated_data]
+        return [insight.attributes for insight in validated_data]
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -219,7 +222,6 @@ class Evnex:
         r = await self.httpx_client.get(
             f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/status",
             headers=self._common_headers,
-
         )
         json_data = await self._check_api_response(r)
         return EvnexGetOrgSummaryStatusResponse.model_validate(json_data).data

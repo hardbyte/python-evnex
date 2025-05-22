@@ -17,42 +17,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: 3.12
+
+      - name: Install dependencies for linting
+        run: uv sync --group dev
       - name: Check formatting
-        uses: chartboost/ruff-action@v1
+        run: uv run ruff format --check . # Or use chartboost/ruff-action if it works with uv env
+      - name: Lint
+        run: uv run ruff check .
 
   build:
     name: Build Python Package
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12" ]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Install the latest version of uv and set the python version
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-      - name: Install uv
-        run: |
-          pip install uv
-          uv --version
+          python-version: ${{ matrix.python-version }}
 
-      # load cached venv if cache exists
-      - name: Load cached venv
-        id: cached-uv-dependencies
-        uses: actions/cache@v4
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ hashFiles('**/uv.lock') }}
 
-      # install dependencies if cache does not exist
       - name: Install dependencies
-        if: steps.cached-uv-dependencies.outputs.cache-hit != 'true'
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          uv pip install -e ".[dev]"
-          pip list
+        run: uv sync
       - name: Build Package
         run: uv build
       - name: Save artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: python-evnex
           path: ./dist

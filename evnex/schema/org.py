@@ -26,8 +26,10 @@ class EvnexOrgInsightEntry(BaseModel):
     sessions: int
     startDate: datetime
 
+
 class EvnexInsightAttributeWrapper(BaseModel):
     attributes: EvnexOrgInsightEntry
+
 
 class EvnexOrgSummaryStatus(BaseModel):
     charging: int
@@ -39,9 +41,9 @@ class EvnexOrgSummaryStatus(BaseModel):
     reserved: int
 
 
-
 class EvnexGetOrgInsights(BaseModel):
     data: list[EvnexInsightAttributeWrapper]
+
 
 class EvnexGetOrgSummaryStatusResponse(BaseModel):
     data: EvnexOrgSummaryStatus
