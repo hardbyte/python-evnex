@@ -40,7 +40,7 @@ from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandRespons
 from evnex.schema.v3.generic import EvnexV3APIResponse
 from pydantic_settings import BaseSettings
 
-from schema.org import EvnexOrgSummaryStatus
+from evnex.schema.org import EvnexOrgSummaryStatus
 
 logger = logging.getLogger("evnex.api")
 
@@ -183,11 +183,11 @@ class Evnex:
             org_id = self.org_id
         logger.debug("Listing org charge points")
         r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points",
+            f"https://client-api.evnex.io/organisations/{org_id}/charge-points",
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointsResponse.model_validate(json_data).data.items
+        return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -424,7 +424,7 @@ class Evnex:
         availability = "Operative" if available else "Inoperative"
         logger.info(f"Changing connector {connector_id} to {availability}")
         r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/change-availability",
             headers=self._common_headers,
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
