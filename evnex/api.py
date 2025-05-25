@@ -22,7 +22,6 @@ from evnex.schema.charge_points import (
     EvnexChargePointTransaction,
     EvnexGetChargePointTransactionsResponse,
     EvnexGetChargePointDetailResponse,
-    EvnexGetChargePointsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import (
