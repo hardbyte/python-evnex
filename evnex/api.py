@@ -29,6 +29,7 @@ from evnex.schema.org import (
     EvnexOrgInsightEntry,
     EvnexGetOrgSummaryStatusResponse,
     EvnexGetOrgInsights,
+    EvnexOrgSummaryStatus,
 )
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
@@ -40,7 +41,6 @@ from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandRespons
 from evnex.schema.v3.generic import EvnexV3APIResponse
 from pydantic_settings import BaseSettings
 
-from schema.org import EvnexOrgSummaryStatus
 
 logger = logging.getLogger("evnex.api")
 
@@ -158,9 +158,9 @@ class Evnex:
             logger.warning(
                 f"Unsuccessful request\n{response.status_code}\n{response.text}"
             )
-        logger.debug(
-            f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
-        )
+        # logger.debug(
+        #     f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
+        # )
 
         response.raise_for_status()
 
@@ -395,18 +395,29 @@ class Evnex:
 
         return EvnexCommandResponse.model_validate(json_data["data"])
 
-    async def enable_charger(self, charge_point_id: str, connector_id: int | str = 1):
+    async def enable_charger(
+        self, org_id: str, charge_point_id: str, connector_id: int | str = 1
+    ):
         await self.set_charger_availability(
-            charge_point_id=charge_point_id, available=True, connector_id=connector_id
+            org_id=org_id,
+            charge_point_id=charge_point_id,
+            available=True,
+            connector_id=connector_id,
         )
 
-    async def disable_charger(self, charge_point_id: str, connector_id: int | str = 1):
+    async def disable_charger(
+        self, org_id: str, charge_point_id: str, connector_id: int | str = 1
+    ):
         await self.set_charger_availability(
-            charge_point_id=charge_point_id, available=False, connector_id=connector_id
+            org_id=org_id,
+            charge_point_id=charge_point_id,
+            available=False,
+            connector_id=connector_id,
         )
 
     async def set_charger_availability(
         self,
+        org_id: str,
         charge_point_id: str,
         available: bool = True,
         connector_id: int | str = 1,
@@ -424,7 +435,7 @@ class Evnex:
         availability = "Operative" if available else "Inoperative"
         logger.info(f"Changing connector {connector_id} to {availability}")
         r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/change-availability",
+            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/change-availability",
             headers=self._common_headers,
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
