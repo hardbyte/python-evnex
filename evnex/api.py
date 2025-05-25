@@ -22,7 +22,6 @@ from evnex.schema.charge_points import (
     EvnexChargePointTransaction,
     EvnexGetChargePointTransactionsResponse,
     EvnexGetChargePointDetailResponse,
-    EvnexGetChargePointsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import (
@@ -183,11 +182,11 @@ class Evnex:
             org_id = self.org_id
         logger.debug("Listing org charge points")
         r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points",
+            f"https://client-api.evnex.io/organisations/{org_id}/charge-points",
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
-        return EvnexGetChargePointsResponse.model_validate(json_data).data.items
+        return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
