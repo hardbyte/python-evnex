@@ -158,9 +158,9 @@ class Evnex:
             logger.warning(
                 f"Unsuccessful request\n{response.status_code}\n{response.text}"
             )
-        logger.debug(
-            f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
-        )
+        # logger.debug(
+        #     f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
+        # )
 
         response.raise_for_status()
 
