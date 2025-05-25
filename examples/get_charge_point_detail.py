@@ -36,9 +36,7 @@ async def main():
 
         for charge_point in charge_points:
             print(
-                charge_point.name,
-                charge_point.networkStatus,
-                charge_point.serial,
+                charge_point.attributes.evseId,
                 charge_point.id,
             )
 
