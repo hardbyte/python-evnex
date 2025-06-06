@@ -6,7 +6,7 @@ from warnings import warn
 import botocore
 import pydantic
 from pydantic_core import from_json
-from httpx import AsyncClient, ReadTimeout
+from httpx import AsyncClient, ReadTimeout, HTTPStatusError
 from pycognito import Cognito
 from pydantic import HttpUrl, ValidationError
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
@@ -174,7 +174,9 @@ class Evnex:
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
-        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+        retry=retry_if_not_exception_type(
+            (ValidationError, NotAuthorizedException, HTTPStatusError)
+        ),
     )
     async def get_org_charge_points(
         self, org_id: Optional[str] = None

@@ -4,6 +4,7 @@ import logging
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 from evnex.api import Evnex
+from httpx import HTTPStatusError
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -32,7 +33,10 @@ async def main():
             print(segment)
 
         print(f"Getting charge points for '{org.name}'")
-        charge_points = await evnex.get_org_charge_points(org_id=org.id)
+        try:
+            charge_points = await evnex.get_org_charge_points(org_id=org.id)
+        except HTTPStatusError:
+            charge_points = await evnex.get_org_charge_points(org_id=org.slug)
 
         for charge_point in charge_points:
             print(
