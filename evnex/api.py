@@ -279,7 +279,7 @@ class Evnex:
         :raises: ReadTimeout if the charge point is offline.
         """
         r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/get-solar",
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-solar",
             headers=self._common_headers,
         )
         json_data = await self._check_api_response(r)
@@ -316,7 +316,7 @@ class Evnex:
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
     ):
         r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v3/charge-points/{charge_point_id}/commands/set-override",
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/set-override",
             headers=self._common_headers,
             json={"connectorId": connector_id, "chargeNow": charge_now},
         )
