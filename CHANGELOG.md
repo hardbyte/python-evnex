@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 ### Removed
 
+## 0.4.5 - 2024-08-21
+
+- Removed obsolete /v3/ from paths
+
+## 0.4.4 - 2024-06-8
+
+- fix for get_org_charge_points by @drc38 in #62
+
 ## 0.3.9 - 2024-01-06
 
 Added shims to support Pydantic v1 and v2.
