@@ -1,5 +1,8 @@
 # python-evnex
 
+[![CI](https://github.com/hardbyte/python-evnex/actions/workflows/ci.yml/badge.svg)](https://github.com/hardbyte/python-evnex/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/evnex.svg)](https://pypi.org/project/evnex/)
+
 Python client for the Evnex API.
 
 Author not affiliated with Evnex.
@@ -10,13 +13,15 @@ Author not affiliated with Evnex.
 - Automatic retries with exponential backoff
 - Automatic re-authentication
 - Optionally pass in a `httpx` client
-- Optionally pass in tokens to resume existing session
+- Optionally pass in tokens to resume an existing session
 
 ## Installation
 
 ```
 pip install evnex
 ```
+
+**Requirements:** Python 3.11+
 
 
 ## Usage
@@ -67,10 +72,23 @@ python -m examples.get_charge_point_detail
 
 ## Developer Notes
 
+### Development Setup
+
+```shell
+# Install dependencies with development tools
+uv sync --group dev
+
+# Set up pre-commit hooks (recommended)
+uv run pre-commit install
+
+# Alternatively, format and lint manually
+uv run ruff format .
+uv run ruff check .
+```
+
 ### Making a new release
 
-What ends up on PyPi is what really matters. Creating a release in GitHub should 
-trigger a release workflow that builds and publishes to PyPi.
+What ends up on PyPi is what really matters. Creating a release in GitHub triggers a release workflow that builds and publishes to PyPi.
 
 To manually release, update the version in `pyproject.toml`, build and publish with uv:
 
@@ -79,9 +97,3 @@ uv build
 uv publish
 ```
 
-Alternatively, you can use standard Python build tools:
-
-```shell
-python -m build
-python -m twine upload dist/*
-```
