@@ -22,7 +22,8 @@ dependencies = [
 dev = [
     "ruff",
     "pytest>7.1,<9.0",
-    "pre-commit",
+    "pre-commit>=4.3.0",
+    "pre-commit-uv>=4.1.4"
 ]
 
 [build-system]
