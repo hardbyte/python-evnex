@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -57,7 +57,7 @@ class EvnexChargePointDetails(BaseModel):
     model: str
     vendor: str
     firmware: str
-    iccid: str
+    iccid: Optional[str] = None
 
 
 class EvnexChargePointSolarConfig(BaseModel):
