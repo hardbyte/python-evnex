@@ -63,7 +63,6 @@ class EvnexChargePointDetail(BaseModel):
     createdDate: datetime
     electricityCost: EvnexElectricityCost
     firmware: str
-    iccid: str
     maxCurrent: float
     model: str
     name: str
@@ -76,6 +75,7 @@ class EvnexChargePointDetail(BaseModel):
     tokenRequired: bool
     updatedDate: datetime
     vendor: str
+    iccid: Optional[str] = None
 
 
 class EvnexChargePointSessionAttributes(BaseModel):
