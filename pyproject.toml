@@ -14,7 +14,7 @@ dependencies = [
     "pycognito>=2023.5.0,<2025",
     "boto3>=1.26,<2.0",
     "pydantic>2.0.0,<3.0.0",
-    "tenacity>=8.1,<9.0",
+    "tenacity>=8.1,<10.0",
     "pydantic-settings>=2.2,<3.0",
 ]
 
