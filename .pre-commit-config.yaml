@@ -8,11 +8,11 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.10
     hooks:
-      - id: ruff
-        args:
-          - --fix
+      - id: ruff-check
+        args: [ --fix ]
+        types_or: [ python, pyi ]
       - id: ruff-format
-        files: ^((custom_components|tests)/.+)?[^/]+\.(py|pyi)$
+        types_or: [ python, pyi ]
   - repo: https://github.com/JelleZijlstra/autotyping
     rev: master
     hooks:
