@@ -1,6 +1,5 @@
-
-
 from dataclasses import dataclass
+
 
 @dataclass
 class EvnexModelInfo:
@@ -11,6 +10,7 @@ class EvnexModelInfo:
     power: str = "N/A"  # Only for X-series
     power_sensor: str = "N/A"  # Only for X-series
     configuration: str = "N/A"  # Only for X-series
+
 
 # Lookup tables
 CONNECTOR_MAP_E2 = {
