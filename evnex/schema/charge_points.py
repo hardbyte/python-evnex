@@ -61,7 +61,6 @@ class EvnexChargePointConnectorMeter(BaseModel):
     power: float
     raw_register: float = Field(..., alias="register")
     frequency: float
-    temperature: float
 
 
 class Coordinates(BaseModel):
@@ -124,6 +123,10 @@ class EvnexChargePointOverrideConfig(BaseModel):
 class EvnexChargePointStatus(BaseModel):
     commandResultStatus: str
     chargePointStatus: Optional[ChargePointStatus] = None
+
+
+class EvnexChargePointStatusResponse(BaseModel):
+    data: EvnexChargePointStatus
 
 
 class EvnexChargePointBase(BaseModel):

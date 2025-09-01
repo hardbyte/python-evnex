@@ -23,7 +23,7 @@ from evnex.schema.charge_points import (
     EvnexGetChargePointTransactionsResponse,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
-    EvnexChargePointStatus,
+    EvnexChargePointStatusResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import (
@@ -330,7 +330,7 @@ class Evnex:
     )
     async def get_charge_point_status(
         self, charge_point_id: str
-    ) -> EvnexChargePointStatus:
+    ) -> EvnexChargePointStatusResponse:
         """
         :param charge_point_id:
         :raises: ReadTimeout if the charge point is offline.
@@ -341,7 +341,7 @@ class Evnex:
         )
         json_data = await self._check_api_response(r)
 
-        return EvnexChargePointStatus.model_validate(json_data)
+        return EvnexChargePointStatusResponse.model_validate(json_data)
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),
