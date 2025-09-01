@@ -1,9 +1,58 @@
 from datetime import datetime
+from enum import StrEnum
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from evnex.schema.cost import EvnexCost
+
+
+class ChargingLogic(StrEnum):
+    UNAVAILABLE = "Unavailable"
+    NOVEHICLE = "NoVehicle"
+    VEHICLE = "Vehicle"
+    TRANSFER = "Transfer"
+    FAULT = "Fault"
+
+
+class ChargingCurrentControl(StrEnum):
+    FULLPOWER = "FullPower"
+    THERMALLIMITED = "ThermalLimited"
+    LLMLIMITED = "LLMLimited"
+    WAITINGSCHEDULE = "WaitingSchedule"
+    WAITINGSOLAR = "WaitingSolar"
+    SOLARCONTROL = "SolarControl"
+    SCHEDULELIMITED = "ScheduleLimited"
+    SUPPLYLIMITED = "SupplyLimited"
+
+
+class E2LEDState(StrEnum):
+    OFF = "Off"
+    IDLE = "Idle"
+    CHARGING = "Charging"
+    CHARGENOWCHARGING = "ChargeNowCharging"
+    CHARGENOWNOTCHARGING = "ChargeNowNotCharging"
+    FAULT = "Fault"
+    DISABLED = "Disabled"
+    WAITSCHEDULE = "WaitSchedule"
+    WAITSOLAR = "WaitSolar"
+    WAITVEHICLE = "WaitVehicle"
+    SHUTTINGDOWN = "ShuttingDown"
+
+
+class AntiSleepState(StrEnum):
+    DISABLED = "Disabled"
+    ENABLED = "Enabled"
+    ACTIVE = "Active"
+    NA = "NA"
+
+
+class ChargePointStatus(BaseModel):
+    chargeNow: bool
+    chargingLogic: ChargingLogic
+    chargingCurrentControl: ChargingCurrentControl
+    LEDState: E2LEDState
+    AntiSleep: AntiSleepState
 
 
 class EvnexChargePointConnectorMeter(BaseModel):
@@ -69,6 +118,15 @@ class EvnexChargePointSolarConfig(BaseModel):
 
 class EvnexChargePointOverrideConfig(BaseModel):
     chargeNow: bool | Literal["NotSupported"]
+
+
+class EvnexChargePointStatus(BaseModel):
+    commandResultStatus: str
+    chargePointStatus: Optional[ChargePointStatus] = None
+
+
+class EvnexChargePointStatusResponse(BaseModel):
+    data: EvnexChargePointStatus
 
 
 class EvnexChargePointBase(BaseModel):

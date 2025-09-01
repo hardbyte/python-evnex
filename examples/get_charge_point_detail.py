@@ -45,6 +45,12 @@ async def main():
                 charge_point.serial,
                 charge_point.id,
             )
+            print("Getting charge point status")
+            charge_status = await evnex.get_charge_point_status(
+                charge_point_id=charge_point.id
+            )
+
+            print(charge_status)
 
             print("charge point details")
             charge_point_detail = await evnex.get_charge_point_detail_v3(
