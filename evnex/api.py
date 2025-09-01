@@ -23,6 +23,7 @@ from evnex.schema.charge_points import (
     EvnexGetChargePointTransactionsResponse,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
+    EvnexChargePointStatus,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import (
@@ -322,6 +323,25 @@ class Evnex:
         )
         r.raise_for_status()
         return True
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+    )
+    async def get_charge_point_status(
+        self, charge_point_id: str
+    ) -> EvnexChargePointStatus:
+        """
+        :param charge_point_id:
+        :raises: ReadTimeout if the charge point is offline.
+        """
+        r = await self.httpx_client.post(
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-status",
+            headers=self._common_headers,
+        )
+        json_data = await self._check_api_response(r)
+
+        return EvnexChargePointStatus.model_validate(json_data)
 
     @retry(
         wait=wait_random_exponential(multiplier=1, max=60),

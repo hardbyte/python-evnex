@@ -37,11 +37,16 @@ class EvnexChargeProfile(BaseModel):
 
 class EvnexChargePointConnectorMeter(BaseModel):
     currentL1: Optional[float] = None
+    currentL2: Optional[float] = None
+    currentL3: Optional[float] = None
     frequency: float
     power: float
     raw_register: float = Field(..., alias="register")
     updatedDate: datetime
+    temperature: float
     voltageL1N: Optional[float] = None
+    voltageL2N: Optional[float] = None
+    voltageL3N: Optional[float] = None
 
 
 class EvnexChargePointConnector(BaseModel):
