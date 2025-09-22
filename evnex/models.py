@@ -53,7 +53,7 @@ CONNECTOR_MAP_X = {
 
 CONFIG_MAP_X = {
     "S": "Socket",
-    "T": "5m Tether",
+    "T": "Tether",
 }
 
 COLOUR_MAP_X = {
