@@ -58,7 +58,7 @@ class EvnexChargePointConnector(BaseModel):
     connectorId: str
     ocppCode: str  # CHARGING
     updatedDate: datetime
-    meter: EvnexChargePointConnectorMeter
+    meter: EvnexChargePointConnectorMeter | None = None
     maxVoltage: float
     maxAmperage: float
 
