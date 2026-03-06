@@ -99,7 +99,7 @@ class EvnexChargePointConnector(BaseModel):
     ocppStatus: str
     status: str  # OCCUPIED, CHARGING
     ocppCode: str  # CHARGING
-    meter: EvnexChargePointConnectorMeter
+    meter: EvnexChargePointConnectorMeter | None = None
 
 
 class EvnexChargePointDetails(BaseModel):
