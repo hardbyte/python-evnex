@@ -137,7 +137,7 @@ class EvnexChargePointEnergyMeterReading(BaseModel):
 
 class EvnexChargePointEnergyMeterReadingResponse(BaseModel):
     data: EvnexChargePointEnergyMeterReading
-    status: str # Accepted
+    status: str  # Accepted
 
 
 class EvnexChargePointBase(BaseModel):

@@ -84,11 +84,11 @@ async def main():
             # override = await evnex.get_charge_point_override(charge_point_id=charge_point.id)
             # print(override)
 
-            print("Energy Meter Reading")
-            charge_energy_meter_reading = await evnex.get_charge_point_energy_meter_reading(
+            print("Getting energy meter reading")
+            charge_reading = await evnex.get_charge_point_energy_meter_reading(
                 charge_point_id=charge_point.id
             )
-            print(charge_energy_meter_reading)
+            print(charge_reading)
 
             print()
             print("Getting transactions")
