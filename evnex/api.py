@@ -115,7 +115,7 @@ class Evnex:
         """
         Authenticate the user and update the access_token
 
-        :raises NotAuthorizedException, MfaRequiredException
+        :raises NotAuthorizedException, SoftwareTokenMFAChallengeException, SMSMFAChallengeException
         """
         logger.debug("Authenticating to EVNEX cloud api")
         try:
