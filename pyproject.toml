@@ -21,6 +21,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.12.10",
+    "mypy>=1.15",
     "pytest>7.1,<9.0",
     "pre-commit>=4.3.0",
     "pre-commit-uv>=4.1.4"
@@ -29,6 +30,12 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
 
 [tool.isort]
 profile = "black"
