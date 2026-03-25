@@ -1,14 +1,19 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
-from typing import Optional
+from typing import Literal, Optional
 from warnings import warn
 
 import botocore
 import pydantic
-from pydantic_core import from_json
-from httpx import AsyncClient, ReadTimeout, HTTPStatusError
+from httpx import AsyncClient, HTTPStatusError, ReadTimeout
 from pycognito import Cognito
+from pycognito.exceptions import (
+    SMSMFAChallengeException,
+    SoftwareTokenMFAChallengeException,
+)
 from pydantic import HttpUrl, ValidationError
+from pydantic_core import from_json
+from pydantic_settings import BaseSettings
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
 
 from evnex.errors import NotAuthorizedException
@@ -18,30 +23,30 @@ from evnex.schema.charge_points import (
     EvnexChargePointLoadSchedule,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
-    EvnexChargeProfileSegment,
+    EvnexChargePointStatusResponse,
     EvnexChargePointTransaction,
-    EvnexGetChargePointTransactionsResponse,
+    EvnexChargeProfileSegment,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
-    EvnexChargePointStatusResponse,
+    EvnexGetChargePointTransactionsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import (
-    EvnexOrgInsightEntry,
-    EvnexGetOrgSummaryStatusResponse,
     EvnexGetOrgInsights,
+    EvnexGetOrgSummaryStatusResponse,
+    EvnexOrgInsightEntry,
     EvnexOrgSummaryStatus,
 )
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
-    EvnexGetChargePointSessionsResponse,
+)
+from evnex.schema.v3.charge_points import (
     EvnexChargePointSession,
+    EvnexGetChargePointSessionsResponse,
 )
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
-from pydantic_settings import BaseSettings
-
 
 logger = logging.getLogger("evnex.api")
 
@@ -92,10 +97,6 @@ class Evnex:
             access_token=access_token,
         )
 
-        if any(token is None for token in {id_token, access_token, refresh_token}):
-            logger.debug("Starting cognito auth flow")
-            self.authenticate()
-
         try:
             self.version = version("evnex")
         except PackageNotFoundError:
@@ -114,11 +115,32 @@ class Evnex:
         """
         Authenticate the user and update the access_token
 
-        :raises NotAuthorizedException
+        :raises NotAuthorizedException, SoftwareTokenMFAChallengeException, SMSMFAChallengeException
         """
         logger.debug("Authenticating to EVNEX cloud api")
         try:
             self.cognito.authenticate(password=self.password)
+        except SoftwareTokenMFAChallengeException:
+            raise
+        except SMSMFAChallengeException:
+            raise
+        except botocore.exceptions.ClientError as e:
+            raise NotAuthorizedException(e.args[0]) from e
+
+    def respond_to_mfa_challenge(self, mfa_code: str, mode: Literal["SMS", "TOTP"]):
+        """
+        Respond to a multi-factor authentication challenge either via SMS or TOTP app.
+
+        :raises NotAuthorizedException
+        """
+        logger.debug("MFA Challenge and response issued.")
+
+        try:
+            match mode:
+                case "SMS":
+                    self.cognito.respond_to_sms_mfa_challenge(mfa_code)
+                case "TOTP":
+                    self.cognito.respond_to_software_token_mfa_challenge(mfa_code)
         except botocore.exceptions.ClientError as e:
             raise NotAuthorizedException(e.args[0]) from e
 

@@ -1,8 +1,8 @@
 import asyncio
 import logging
 
-from pydantic_settings import BaseSettings
 from pydantic import SecretStr
+from pydantic_settings import BaseSettings
 
 from evnex.api import Evnex
 
@@ -20,6 +20,8 @@ async def main():
         username=creds.EVNEX_CLIENT_USERNAME,
         password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
     )
+
+    evnex.authenticate()
 
     user_data = await evnex.get_user_detail()
     for org in user_data.organisations:
