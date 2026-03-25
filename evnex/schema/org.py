@@ -16,6 +16,7 @@ class EvnexOrgBrief(BaseModel):
     tier: int
     tierDetails: Any = None
     updatedDate: datetime
+    namespacePrefix: str | None = None
 
 
 class EvnexOrgInsightEntry(BaseModel):

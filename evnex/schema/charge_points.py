@@ -71,6 +71,7 @@ class Coordinates(BaseModel):
 class EvnexAddress(BaseModel):
     address1: str
     address2: str | None = None
+    address3: str | None = None
     city: str | None = None
     postCode: str | None = None
     state: str | None = None

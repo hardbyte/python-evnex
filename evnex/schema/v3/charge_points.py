@@ -35,6 +35,16 @@ class EvnexChargeProfile(BaseModel):
     chargeSchedule: Optional[EvnexChargeSchedule] = None
 
 
+class EvnexChargePointFeature(BaseModel):
+    unlocked: bool
+
+
+class EvnexChargePointFeatures(BaseModel):
+    PowerSensor: EvnexChargePointFeature
+    Solar: EvnexChargePointFeature
+    VehicleIntegration: EvnexChargePointFeature
+
+
 class EvnexChargePointConnectorMeter(BaseModel):
     currentL1: Optional[float] = None
     currentL2: Optional[float] = None
@@ -63,6 +73,13 @@ class EvnexChargePointConnector(BaseModel):
     maxAmperage: float
 
 
+class EvnexChargePointConnectionConfiguration(BaseModel):
+    automaticallyManaged: bool
+    preferredConnectionType: str  # Cell
+    updatedDate: datetime
+    wifiConnected: bool
+
+
 class EvnexChargePointDetail(BaseModel):
     connectors: list[EvnexChargePointConnector]
     createdDate: datetime
@@ -80,7 +97,10 @@ class EvnexChargePointDetail(BaseModel):
     tokenRequired: bool
     updatedDate: datetime
     vendor: str
+    connectionConfiguration: Optional[EvnexChargePointConnectionConfiguration] = None
+    features: Optional[EvnexChargePointFeatures] = None
     iccid: Optional[str] = None
+    isSolarEnabled: Optional[bool] = None
 
 
 class EvnexChargePointSessionAttributes(BaseModel):
