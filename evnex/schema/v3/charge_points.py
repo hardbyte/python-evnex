@@ -81,14 +81,10 @@ class EvnexChargePointConnectionConfiguration(BaseModel):
 
 
 class EvnexChargePointDetail(BaseModel):
-    connectionConfiguration: Optional[EvnexChargePointConnectionConfiguration] = None
     connectors: list[EvnexChargePointConnector]
     createdDate: datetime
     electricityCost: EvnexElectricityCost
-    features: Optional[EvnexChargePointFeatures] = None
     firmware: str
-    iccid: Optional[str] = None
-    isSolarEnabled: Optional[bool] = None
     maxCurrent: float
     model: str
     name: str
@@ -101,6 +97,10 @@ class EvnexChargePointDetail(BaseModel):
     tokenRequired: bool
     updatedDate: datetime
     vendor: str
+    connectionConfiguration: Optional[EvnexChargePointConnectionConfiguration] = None
+    features: Optional[EvnexChargePointFeatures] = None
+    iccid: Optional[str] = None
+    isSolarEnabled: Optional[bool] = None
 
 
 class EvnexChargePointSessionAttributes(BaseModel):

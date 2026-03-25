@@ -12,11 +12,11 @@ class EvnexOrgBrief(BaseModel):
     role: int
     createdDate: datetime
     name: str
-    namespacePrefix: str | None = None
     slug: str
     tier: int
     tierDetails: Any = None
     updatedDate: datetime
+    namespacePrefix: str | None = None
 
 
 class EvnexOrgInsightEntry(BaseModel):
