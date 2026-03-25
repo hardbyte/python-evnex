@@ -129,6 +129,17 @@ class EvnexChargePointStatusResponse(BaseModel):
     data: EvnexChargePointStatus
 
 
+class EvnexChargePointEnergyMeterReading(BaseModel):
+    timestamp: datetime
+    chargingActivePower: float
+    supplyActivePower: float
+
+
+class EvnexChargePointEnergyMeterReadingResponse(BaseModel):
+    data: EvnexChargePointEnergyMeterReading
+    status: str
+
+
 class EvnexChargePointBase(BaseModel):
     # Attributes shared by brief and detail endpoints
     id: str
