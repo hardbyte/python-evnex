@@ -1,54 +1,54 @@
 import logging
 from importlib.metadata import PackageNotFoundError, version
-from typing import Optional
 from warnings import warn
 
 import botocore
 import pydantic
-from pydantic_core import from_json
-from httpx import AsyncClient, ReadTimeout, HTTPStatusError
+from httpx import AsyncClient, HTTPStatusError, ReadTimeout
 from pycognito import Cognito
-from pydantic import HttpUrl, ValidationError
+from pydantic import ValidationError
+from pydantic_core import from_json
+from pydantic_settings import BaseSettings
 from tenacity import retry, retry_if_not_exception_type, wait_random_exponential
 
 from evnex.errors import NotAuthorizedException
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
+    EvnexChargePointEnergyMeterReadingResponse,
     EvnexChargePointLoadSchedule,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
-    EvnexChargeProfileSegment,
+    EvnexChargePointStatusResponse,
     EvnexChargePointTransaction,
-    EvnexGetChargePointTransactionsResponse,
+    EvnexChargeProfileSegment,
     EvnexGetChargePointDetailResponse,
     EvnexGetChargePointsResponse,
-    EvnexChargePointStatusResponse,
-    EvnexChargePointEnergyMeterReadingResponse,
+    EvnexGetChargePointTransactionsResponse,
 )
 from evnex.schema.commands import EvnexCommandResponse
 from evnex.schema.org import (
-    EvnexOrgInsightEntry,
-    EvnexGetOrgSummaryStatusResponse,
     EvnexGetOrgInsights,
+    EvnexGetOrgSummaryStatusResponse,
+    EvnexOrgInsightEntry,
     EvnexOrgSummaryStatus,
 )
 from evnex.schema.user import EvnexGetUserResponse, EvnexUserDetail
 from evnex.schema.v3.charge_points import (
     EvnexChargePointDetail as EvnexChargePointDetailV3,
-    EvnexGetChargePointSessionsResponse,
+)
+from evnex.schema.v3.charge_points import (
     EvnexChargePointSession,
+    EvnexGetChargePointSessionsResponse,
 )
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
-from pydantic_settings import BaseSettings
-
 
 logger = logging.getLogger("evnex.api")
 
 
 class EvnexConfig(BaseSettings):
-    EVNEX_BASE_URL: HttpUrl = "https://client-api.evnex.io"
+    EVNEX_BASE_URL: str = "https://client-api.evnex.io"
     EVNEX_COGNITO_USER_POOL_ID: str = "ap-southeast-2_zWnqo6ASv"
     EVNEX_COGNITO_CLIENT_ID: str = "rol3lsv2vg41783550i18r7vi"
     EVNEX_ORG_ID: str | None = None
@@ -62,8 +62,8 @@ class Evnex:
         id_token=None,
         refresh_token=None,
         access_token=None,
-        config: EvnexConfig = None,
-        httpx_client: AsyncClient = None,
+        config: EvnexConfig | None = None,
+        httpx_client: AsyncClient | None = None,
     ):
         """
         Create an Evnex API client.
@@ -181,7 +181,7 @@ class Evnex:
         ),
     )
     async def get_org_charge_points(
-        self, org_id: Optional[str] = None
+        self, org_id: str | None = None
     ) -> list[EvnexChargePoint]:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -198,7 +198,7 @@ class Evnex:
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_insight(
-        self, days: int, org_id: Optional[str] = None, tz_offset: int = 12
+        self, days: int, org_id: str | None = None, tz_offset: int = 12
     ) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -218,7 +218,7 @@ class Evnex:
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_summary_status(
-        self, org_id: Optional[str] = None
+        self, org_id: str | None = None
     ) -> EvnexOrgSummaryStatus:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -409,7 +409,7 @@ class Evnex:
     async def stop_charge_point(
         self,
         charge_point_id: str,
-        org_id: Optional[str] = None,
+        org_id: str | None = None,
         connector_id: str = "1",
         timeout=10,
     ) -> EvnexCommandResponse:
@@ -465,7 +465,7 @@ class Evnex:
         available: bool = True,
         connector_id: int | str = 1,
         timeout=10,
-    ) -> EvnexCommandResponse:
+    ) -> EvnexCommandResponseV3:
         """
         Change availability of charger.
 

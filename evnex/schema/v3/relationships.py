@@ -1,5 +1,3 @@
-from typing import Optional
-
 from pydantic import BaseModel
 
 
@@ -9,10 +7,10 @@ class EvnexRelationship(BaseModel):
 
 
 class EvnexRelationshipWrapper(BaseModel):
-    data: Optional[EvnexRelationship] = None
+    data: EvnexRelationship | None = None
 
 
 class EvnexRelationships(BaseModel):
-    chargePoint: Optional[EvnexRelationshipWrapper] = None
-    location: Optional[EvnexRelationshipWrapper] = None
-    organisation: Optional[EvnexRelationshipWrapper] = None
+    chargePoint: EvnexRelationshipWrapper | None = None
+    location: EvnexRelationshipWrapper | None = None
+    organisation: EvnexRelationshipWrapper | None = None

@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -107,7 +107,7 @@ class EvnexChargePointDetails(BaseModel):
     model: str
     vendor: str
     firmware: str
-    iccid: Optional[str] = None
+    iccid: str | None = None
 
 
 class EvnexChargePointSolarConfig(BaseModel):
@@ -123,7 +123,7 @@ class EvnexChargePointOverrideConfig(BaseModel):
 
 class EvnexChargePointStatus(BaseModel):
     commandResultStatus: str
-    chargePointStatus: Optional[ChargePointStatus] = None
+    chargePointStatus: ChargePointStatus | None = None
 
 
 class EvnexChargePointStatusResponse(BaseModel):
