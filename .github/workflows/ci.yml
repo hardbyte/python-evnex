@@ -16,7 +16,7 @@ jobs:
     name: Code Analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: 3.13
@@ -35,7 +35,7 @@ jobs:
       matrix:
         python-version: ["3.13" ]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install the latest version of uv and set the python version
         uses: astral-sh/setup-uv@v7
         with:
@@ -47,7 +47,7 @@ jobs:
       - name: Check build artifacts
         run: uvx twine check --strict dist/*
       - name: Save artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release
           path: ./dist
@@ -63,7 +63,7 @@ jobs:
     # upload to PyPI only on release
     if: github.event.release && github.event.action == 'published'
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true
