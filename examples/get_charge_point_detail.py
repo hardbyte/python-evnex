@@ -1,10 +1,11 @@
 import asyncio
 import logging
 
+from httpx import HTTPStatusError
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings
+
 from evnex.api import Evnex
-from httpx import HTTPStatusError
 
 logging.basicConfig(level=logging.WARNING)
 
