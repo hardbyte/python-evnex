@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional, Any
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -32,21 +32,31 @@ class EvnexChargeSchedule(BaseModel):
 
 
 class EvnexChargeProfile(BaseModel):
-    chargeSchedule: Optional[EvnexChargeSchedule] = None
+    chargeSchedule: EvnexChargeSchedule | None = None
+
+
+class EvnexChargePointFeature(BaseModel):
+    unlocked: bool
+
+
+class EvnexChargePointFeatures(BaseModel):
+    PowerSensor: EvnexChargePointFeature
+    Solar: EvnexChargePointFeature
+    VehicleIntegration: EvnexChargePointFeature
 
 
 class EvnexChargePointConnectorMeter(BaseModel):
-    currentL1: Optional[float] = None
-    currentL2: Optional[float] = None
-    currentL3: Optional[float] = None
+    currentL1: float | None = None
+    currentL2: float | None = None
+    currentL3: float | None = None
     frequency: float
     power: float
     raw_register: float = Field(..., alias="register")
     updatedDate: datetime
-    temperature: Optional[float] = None
-    voltageL1N: Optional[float] = None
-    voltageL2N: Optional[float] = None
-    voltageL3N: Optional[float] = None
+    temperature: float | None = None
+    voltageL1N: float | None = None
+    voltageL2N: float | None = None
+    voltageL3N: float | None = None
 
 
 class EvnexChargePointConnector(BaseModel):
@@ -58,9 +68,16 @@ class EvnexChargePointConnector(BaseModel):
     connectorId: str
     ocppCode: str  # CHARGING
     updatedDate: datetime
-    meter: EvnexChargePointConnectorMeter
+    meter: EvnexChargePointConnectorMeter | None = None
     maxVoltage: float
     maxAmperage: float
+
+
+class EvnexChargePointConnectionConfiguration(BaseModel):
+    automaticallyManaged: bool
+    preferredConnectionType: str  # Cell
+    updatedDate: datetime
+    wifiConnected: bool
 
 
 class EvnexChargePointDetail(BaseModel):
@@ -80,7 +97,10 @@ class EvnexChargePointDetail(BaseModel):
     tokenRequired: bool
     updatedDate: datetime
     vendor: str
-    iccid: Optional[str] = None
+    connectionConfiguration: EvnexChargePointConnectionConfiguration | None = None
+    features: EvnexChargePointFeatures | None = None
+    iccid: str | None = None
+    isSolarEnabled: bool | None = None
 
 
 class EvnexChargePointSessionAttributes(BaseModel):

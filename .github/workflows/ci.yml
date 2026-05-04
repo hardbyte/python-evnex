@@ -2,24 +2,23 @@ name: Continuous Integration
 
 on:
   release:
-    types: [ published ]
+    types: [published]
   push:
     branches:
       - main
     tags:
-      - '*'
+      - "*"
   pull_request:
-
 
 jobs:
   lint:
     name: Code Analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
         with:
-          python-version: 3.13
+          python-version: 3.14
 
       - name: Install dependencies for linting
         run: uv sync --group dev --frozen
@@ -27,17 +26,19 @@ jobs:
         run: uv run ruff format --check . # Or use chartboost/ruff-action if it works with uv env
       - name: Lint
         run: uv run ruff check .
+      - name: Type check
+        run: uv run mypy evnex/
 
   build:
     name: Build Python Package
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.13" ]
+        python-version: ["3.14"]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Install the latest version of uv and set the python version
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -47,7 +48,7 @@ jobs:
       - name: Check build artifacts
         run: uvx twine check --strict dist/*
       - name: Save artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: release
           path: ./dist
@@ -63,7 +64,7 @@ jobs:
     # upload to PyPI only on release
     if: github.event.release && github.event.action == 'published'
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v7
         with:
           path: dist
           merge-multiple: true

@@ -1,7 +1,6 @@
-from typing import Optional
 from pydantic import BaseModel
 
 
 class EvnexCommandResponse(BaseModel):
-    message: Optional[str] = None
+    message: str | None = None
     status: str  # Accepted

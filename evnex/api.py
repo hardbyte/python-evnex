@@ -20,6 +20,7 @@ from evnex.errors import NotAuthorizedException
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
+    EvnexChargePointEnergyMeterReadingResponse,
     EvnexChargePointLoadSchedule,
     EvnexChargePointOverrideConfig,
     EvnexChargePointSolarConfig,
@@ -52,7 +53,7 @@ logger = logging.getLogger("evnex.api")
 
 
 class EvnexConfig(BaseSettings):
-    EVNEX_BASE_URL: HttpUrl = "https://client-api.evnex.io"
+    EVNEX_BASE_URL: str = "https://client-api.evnex.io"
     EVNEX_COGNITO_USER_POOL_ID: str = "ap-southeast-2_zWnqo6ASv"
     EVNEX_COGNITO_CLIENT_ID: str = "rol3lsv2vg41783550i18r7vi"
     EVNEX_ORG_ID: str | None = None
@@ -66,8 +67,8 @@ class Evnex:
         id_token=None,
         refresh_token=None,
         access_token=None,
-        config: EvnexConfig = None,
-        httpx_client: AsyncClient = None,
+        config: EvnexConfig | None = None,
+        httpx_client: AsyncClient | None = None,
     ):
         """
         Create an Evnex API client.
@@ -202,7 +203,7 @@ class Evnex:
         ),
     )
     async def get_org_charge_points(
-        self, org_id: Optional[str] = None
+        self, org_id: str | None = None
     ) -> list[EvnexChargePoint]:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -219,7 +220,7 @@ class Evnex:
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_insight(
-        self, days: int, org_id: Optional[str] = None, tz_offset: int = 12
+        self, days: int, org_id: str | None = None, tz_offset: int = 12
     ) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -239,7 +240,7 @@ class Evnex:
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
     async def get_org_summary_status(
-        self, org_id: Optional[str] = None
+        self, org_id: str | None = None
     ) -> EvnexOrgSummaryStatus:
         if org_id is None and self.org_id:
             org_id = self.org_id
@@ -369,6 +370,25 @@ class Evnex:
         wait=wait_random_exponential(multiplier=1, max=60),
         retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
     )
+    async def get_charge_point_energy_meter_reading(
+        self, charge_point_id: str
+    ) -> EvnexChargePointEnergyMeterReadingResponse:
+        """
+        :param charge_point_id:
+        :raises: ReadTimeout if the charge point is offline.
+        """
+        r = await self.httpx_client.post(
+            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
+            headers=self._common_headers,
+        )
+        json_data = await self._check_api_response(r)
+
+        return EvnexChargePointEnergyMeterReadingResponse.model_validate(json_data)
+
+    @retry(
+        wait=wait_random_exponential(multiplier=1, max=60),
+        retry=retry_if_not_exception_type((ValidationError, NotAuthorizedException)),
+    )
     async def get_charge_point_transactions(
         self, charge_point_id: str
     ) -> list[EvnexChargePointTransaction]:
@@ -411,7 +431,7 @@ class Evnex:
     async def stop_charge_point(
         self,
         charge_point_id: str,
-        org_id: Optional[str] = None,
+        org_id: str | None = None,
         connector_id: str = "1",
         timeout=10,
     ) -> EvnexCommandResponse:
@@ -467,7 +487,7 @@ class Evnex:
         available: bool = True,
         connector_id: int | str = 1,
         timeout=10,
-    ) -> EvnexCommandResponse:
+    ) -> EvnexCommandResponseV3:
         """
         Change availability of charger.
 

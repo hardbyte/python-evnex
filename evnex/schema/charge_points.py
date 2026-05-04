@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -71,6 +71,7 @@ class Coordinates(BaseModel):
 class EvnexAddress(BaseModel):
     address1: str
     address2: str | None = None
+    address3: str | None = None
     city: str | None = None
     postCode: str | None = None
     state: str | None = None
@@ -99,14 +100,14 @@ class EvnexChargePointConnector(BaseModel):
     ocppStatus: str
     status: str  # OCCUPIED, CHARGING
     ocppCode: str  # CHARGING
-    meter: EvnexChargePointConnectorMeter
+    meter: EvnexChargePointConnectorMeter | None = None
 
 
 class EvnexChargePointDetails(BaseModel):
     model: str
     vendor: str
     firmware: str
-    iccid: Optional[str] = None
+    iccid: str | None = None
 
 
 class EvnexChargePointSolarConfig(BaseModel):
@@ -122,11 +123,22 @@ class EvnexChargePointOverrideConfig(BaseModel):
 
 class EvnexChargePointStatus(BaseModel):
     commandResultStatus: str
-    chargePointStatus: Optional[ChargePointStatus] = None
+    chargePointStatus: ChargePointStatus | None = None
 
 
 class EvnexChargePointStatusResponse(BaseModel):
     data: EvnexChargePointStatus
+
+
+class EvnexChargePointEnergyMeterReading(BaseModel):
+    timestamp: datetime
+    chargingActivePower: float
+    supplyActivePower: float
+
+
+class EvnexChargePointEnergyMeterReadingResponse(BaseModel):
+    data: EvnexChargePointEnergyMeterReading
+    status: str
 
 
 class EvnexChargePointBase(BaseModel):
