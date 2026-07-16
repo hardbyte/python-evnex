@@ -52,6 +52,9 @@ class EvnexChargePointConnectorMeter(BaseModel):
     frequency: float
     power: float
     raw_register: float = Field(..., alias="register")
+    # Grid draw measured by the CT clamp; only present when a power sensor
+    # is installed (features.PowerSensor.unlocked)
+    supplyActivePower: float | None = None
     updatedDate: datetime
     temperature: float | None = None
     voltageL1N: float | None = None
