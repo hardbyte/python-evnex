@@ -22,6 +22,8 @@ async def main():
         password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
     )
 
+    evnex.authenticate()
+
     user_data = await evnex.get_user_detail()
 
     print("User:", user_data.name, user_data.email, user_data.id)

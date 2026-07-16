@@ -21,6 +21,8 @@ async def main():
         password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
     )
 
+    evnex.authenticate()
+
     user_data = await evnex.get_user_detail()
     for org in user_data.organisations:
         print("Getting charge points for", org.name)
