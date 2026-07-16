@@ -24,12 +24,18 @@ dev = [
     "mypy>=1.15",
     "pytest>7.1,<10.0",
     "pre-commit>=4.3.0",
-    "pre-commit-uv>=4.1.4"
+    "pre-commit-uv>=4.1.4",
+    "pytest-asyncio>=1.4.0",
+    "respx>=0.23.1",
+    "blockbuster>=1.5.26",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.11"
