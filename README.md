@@ -57,6 +57,61 @@ if __name__ == '__main__':
     asyncio.run(main())
 ```
 
+### Multifactor authentication
+
+Accounts with MFA enabled can't authenticate with username and password alone:
+the first API call raises a challenge exception. Catch it, obtain a code from
+the user, then respond to the challenge:
+
+```python
+from pycognito.exceptions import (
+    SMSMFAChallengeException,
+    SoftwareTokenMFAChallengeException,
+)
+
+evnex = Evnex(username=username, password=password)
+try:
+    evnex.authenticate()
+except SoftwareTokenMFAChallengeException:
+    code = input("Enter the 6-digit code from your authenticator application: ")
+    evnex.respond_to_mfa_challenge(code, "TOTP")
+except SMSMFAChallengeException:
+    code = input("Enter the 6-digit code you received by SMS: ")
+    evnex.respond_to_mfa_challenge(code, "SMS")
+```
+
+Note the Cognito challenge session is short-lived (around 3 minutes), so
+prompt for the code promptly.
+
+The pending challenge is stored on the `Evnex` instance, so the example above
+works because the same instance calls `authenticate()` and
+`respond_to_mfa_challenge()`. If the response happens somewhere else — a
+different process, or a web backend handling a later request — capture the
+challenge session from the exception and hand it to the new instance:
+
+```python
+try:
+    evnex.authenticate()
+except SoftwareTokenMFAChallengeException as challenge:
+    challenge_session = challenge.get_tokens()  # JSON-serializable dict
+
+# later, on a fresh Evnex instance
+evnex.respond_to_mfa_challenge(code, "TOTP", mfa_tokens=challenge_session)
+```
+
+### Resuming a session
+
+To avoid interactive MFA on every start, store the tokens after a successful
+authentication and pass them back in later — the refresh token alone is
+enough. Access tokens are refreshed automatically when they expire:
+
+```python
+evnex = Evnex(username=username, password=password, refresh_token=refresh_token)
+user_data = await evnex.get_user_detail()  # no MFA prompt needed
+```
+
+See `examples/get_token.py` for a complete MFA + token resumption flow.
+
 ## Examples
 
 `python-evnex` is intended as a library, but a few example scripts are provided in the `examples` folder.

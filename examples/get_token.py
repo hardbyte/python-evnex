@@ -1,9 +1,10 @@
+#!/usr/bin/env python3
 """
 Example script to get a token from AWS cognito. Supports MFA authentication.
-
 """
 
 import asyncio
+import logging
 
 from pycognito.exceptions import (
     SMSMFAChallengeException,
@@ -35,7 +36,7 @@ async def main():
         access_token=creds.ACCESS_TOKEN,
     )
 
-    if not creds.ID_TOKEN:
+    if not creds.ACCESS_TOKEN and not creds.REFRESH_TOKEN:
         try:
             evnex.authenticate()
 
@@ -46,9 +47,9 @@ async def main():
         except SoftwareTokenMFAChallengeException:
             code = input("Enter the 6-digit code from your authenticator application: ")
             evnex.respond_to_mfa_challenge(code, "TOTP")
-    else:
-        user_details = await evnex.get_user_detail()
-        print("User Name:", user_details.name)
+
+    user_details = await evnex.get_user_detail()
+    print("User Name:", user_details.name)
 
     print("Access Token: ", evnex.access_token)
     print("Refresh Token: ", evnex.refresh_token)
@@ -56,8 +57,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    import logging
-
-    logging.basicConfig(level=logging.DEBUG)
+    # Note: DEBUG level logs request headers including bearer tokens
+    logging.basicConfig(level=logging.INFO)
 
     asyncio.run(main())
