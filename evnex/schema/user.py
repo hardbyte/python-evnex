@@ -11,7 +11,8 @@ class EvnexUserDetail(BaseModel):
     id: UUID
     createdDate: datetime
     updatedDate: datetime
-    name: str
+    # The API omits name entirely for accounts that never set one
+    name: str | None = None
     email: str
     organisations: list[EvnexOrgBrief]
     type: Literal["User", "Installer"] = "User"

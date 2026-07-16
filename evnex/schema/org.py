@@ -21,6 +21,7 @@ class EvnexOrgBrief(BaseModel):
 
 class EvnexOrgInsightEntry(BaseModel):
     carbonOffset: float
+    carbonUsage: float | None = None
     cost: EvnexCost
     duration: int
     powerUsage: float
