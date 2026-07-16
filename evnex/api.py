@@ -104,12 +104,16 @@ def api_retry(*extra_non_retryable: type[BaseException]):
     )
 
 
-def refresh_token_if_expired(func):
-    """Decorator to ensure the token is valid before making an API call."""
+def ensure_authenticated(func):
+    """Decorator to ensure we hold session tokens before making an API call.
+
+    Token expiry is handled reactively: a 401 response triggers a refresh
+    and the request is retried (see Evnex._check_api_response).
+    """
 
     @wraps(func)
     async def wrapper(self, *args, **kwargs):
-        await self._ensure_valid_token()
+        await self._ensure_authenticated()
         return await func(self, *args, **kwargs)
 
     return wrapper
@@ -162,15 +166,16 @@ class Evnex:
 
         self.version = EVNEX_VERSION
 
-    async def _ensure_valid_token(self) -> bool:
-        """Ensure we hold a valid access token, authenticating or refreshing as needed.
+    async def _ensure_authenticated(self) -> None:
+        """Ensure we hold session tokens, signing in on first use.
 
-        Returns True if new tokens were obtained.
-
-        :raises NotAuthorizedException: authentication or token refresh failed
+        :raises NotAuthorizedException: authentication failed
         :raises SoftwareTokenMFAChallengeException: respond with a TOTP app code
         :raises SMSMFAChallengeException: respond with a code sent by SMS
         """
+        if self.cognito.access_token is not None and self._resumed_tokens_verified:
+            return
+
         async with self._token_lock:
             if self.cognito.access_token is None:
                 if self.cognito.refresh_token:
@@ -182,27 +187,32 @@ class Evnex:
                 else:
                     logger.debug("No tokens, starting cognito auth flow")
                     await asyncio.to_thread(self.authenticate)
-                self._resumed_tokens_verified = True
-                return True
-
-            logger.debug("Checking if JWT tokens need to be refreshed")
-            try:
-                # check_token() renews via the refresh token if expired
-                renewed = bool(await asyncio.to_thread(self.cognito.check_token))
-            except botocore.exceptions.ClientError as e:
-                logger.error(f"Failed to refresh token: {e}")
-                raise NotAuthorizedException(str(e)) from e
-
-            if renewed:
-                # pycognito verifies newly issued tokens in _set_tokens
-                self._resumed_tokens_verified = True
             elif not self._resumed_tokens_verified:
                 try:
                     await asyncio.to_thread(self.cognito.verify_tokens)
                 except TokenVerificationException as e:
                     raise NotAuthorizedException(str(e)) from e
-                self._resumed_tokens_verified = True
-            return renewed
+            self._resumed_tokens_verified = True
+
+    async def _refresh_session(self, stale_access_token: str | None) -> None:
+        """Obtain fresh tokens after the API rejected the current ones.
+
+        Single-flight: concurrent callers that failed with the same stale
+        token wait on the lock and return without a second refresh.
+
+        :raises NotAuthorizedException: the session could not be renewed
+        """
+        async with self._token_lock:
+            if self.cognito.access_token != stale_access_token:
+                return
+            logger.debug("API rejected the session token, refreshing")
+            try:
+                if self.cognito.refresh_token:
+                    await asyncio.to_thread(self.cognito.renew_access_token)
+                else:
+                    await asyncio.to_thread(self.authenticate)
+            except botocore.exceptions.ClientError as e:
+                raise NotAuthorizedException(str(e)) from e
 
     @property
     def _common_headers(self):
@@ -283,7 +293,7 @@ class Evnex:
         return self.cognito.refresh_token
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_user_detail(self) -> EvnexUserDetail:
         response = await self.httpx_client.get(
             "https://client-api.evnex.io/v2/apps/user", headers=self._common_headers
@@ -299,13 +309,14 @@ class Evnex:
 
     async def _check_api_response(self, response):
         if response.status_code == 401:
-            logger.debug("Got a 401, attempting to refresh tokens")
-            if await self._ensure_valid_token():
-                # New tokens were obtained: the retry policy re-sends the
-                # request with them. A persistent 401 surfaces to the caller
-                # as NotAuthorizedException via _raise_final_attempt.
-                raise TokenRefreshedError()
-            raise NotAuthorizedException()
+            # A 401 means the server rejected the request before executing
+            # it, so re-sending with fresh tokens is safe even for commands.
+            # The retry policy re-sends; a persistent 401 surfaces to the
+            # caller as NotAuthorizedException via _raise_final_attempt.
+            await self._refresh_session(
+                stale_access_token=response.request.headers.get("Authorization")
+            )
+            raise TokenRefreshedError()
         if not response.is_success:
             logger.warning(
                 f"Unsuccessful request\n{response.status_code}\n{response.text}"
@@ -325,7 +336,7 @@ class Evnex:
             raise
 
     @api_retry(HTTPStatusError)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_org_charge_points(
         self, org_id: str | None = None
     ) -> list[EvnexChargePoint]:
@@ -340,7 +351,7 @@ class Evnex:
         return EvnexGetChargePointsResponse.model_validate(json_data).data.items
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_org_insight(
         self, days: int, org_id: str | None = None, tz_offset: int = 12
     ) -> list[EvnexOrgInsightEntry]:
@@ -358,7 +369,7 @@ class Evnex:
         return [insight.attributes for insight in validated_data]
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_org_summary_status(
         self, org_id: str | None = None
     ) -> EvnexOrgSummaryStatus:
@@ -373,7 +384,7 @@ class Evnex:
         return EvnexGetOrgSummaryStatusResponse.model_validate(json_data).data
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_detail(
         self, charge_point_id: str
     ) -> EvnexChargePointDetail:
@@ -390,7 +401,7 @@ class Evnex:
         return EvnexGetChargePointDetailResponse.model_validate(json_data).data
 
     @api_retry(TypeError)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_detail_v3(
         self, charge_point_id: str
     ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
@@ -406,7 +417,7 @@ class Evnex:
         return EvnexV3APIResponse[EvnexChargePointDetailV3].model_validate(json_data)
 
     @api_retry(ReadTimeout)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_solar_config(
         self, charge_point_id: str
     ) -> EvnexChargePointSolarConfig:
@@ -423,7 +434,7 @@ class Evnex:
         return EvnexChargePointSolarConfig.model_validate(json_data)
 
     @api_retry(ReadTimeout)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_override(
         self, charge_point_id: str
     ) -> EvnexChargePointOverrideConfig:
@@ -441,7 +452,7 @@ class Evnex:
         return EvnexChargePointOverrideConfig.model_validate(json_data)
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def set_charge_point_override(
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
     ):
@@ -454,7 +465,7 @@ class Evnex:
         return True
 
     @api_retry(ReadTimeout)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_status(
         self, charge_point_id: str
     ) -> EvnexChargePointStatusResponse:
@@ -471,7 +482,7 @@ class Evnex:
         return EvnexChargePointStatusResponse.model_validate(json_data)
 
     @api_retry(ReadTimeout)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_energy_meter_reading(
         self, charge_point_id: str
     ) -> EvnexChargePointEnergyMeterReadingResponse:
@@ -488,7 +499,7 @@ class Evnex:
         return EvnexChargePointEnergyMeterReadingResponse.model_validate(json_data)
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_transactions(
         self, charge_point_id: str
     ) -> list[EvnexChargePointTransaction]:
@@ -509,7 +520,7 @@ class Evnex:
         ).data.items
 
     @api_retry()
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def get_charge_point_sessions(
         self, charge_point_id: str
     ) -> list[EvnexChargePointSession]:
@@ -521,7 +532,7 @@ class Evnex:
         return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
     @api_retry(ReadTimeout)
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def stop_charge_point(
         self,
         charge_point_id: str,
@@ -574,7 +585,7 @@ class Evnex:
             connector_id=connector_id,
         )
 
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def set_charger_availability(
         self,
         org_id: str,
@@ -604,7 +615,7 @@ class Evnex:
 
         return EvnexCommandResponseV3.model_validate(json_data["data"])
 
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def unlock_charger(
         self,
         charge_point_id: str,
@@ -633,7 +644,7 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexCommandResponse.model_validate(json_data["data"])
 
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def set_charger_load_profile(
         self,
         charge_point_id: str,
@@ -671,7 +682,7 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexChargePointLoadSchedule.model_validate(json_data["data"])
 
-    @refresh_token_if_expired
+    @ensure_authenticated
     async def set_charge_point_schedule(
         self,
         charge_point_id: str,

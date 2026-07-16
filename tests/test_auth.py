@@ -86,20 +86,21 @@ class TestFirstUseAuthentication:
 
 
 class TestTokenRefresh:
-    async def test_expired_token_renewed_before_request(self, authenticated_client):
-        authenticated_client.cognito.check_token.return_value = True
-
+    async def test_no_proactive_checks_on_happy_path(self, authenticated_client):
         with respx.mock:
             respx.get(USER_URL).mock(
                 return_value=httpx.Response(200, json=USER_PAYLOAD)
             )
-            user = await authenticated_client.get_user_detail()
+            await authenticated_client.get_user_detail()
+            await authenticated_client.get_user_detail()
 
-        assert user.name == "Test User"
-        authenticated_client.cognito.check_token.assert_called_once()
+        # Expiry is handled reactively via 401 responses, so successful
+        # requests never touch Cognito
+        authenticated_client.cognito.check_token.assert_not_called()
+        authenticated_client.cognito.renew_access_token.assert_not_called()
 
     async def test_refresh_failure_wrapped_and_not_retried(self, authenticated_client):
-        authenticated_client.cognito.check_token.side_effect = (
+        authenticated_client.cognito.renew_access_token.side_effect = (
             botocore.exceptions.ClientError(
                 {
                     "Error": {
@@ -111,9 +112,13 @@ class TestTokenRefresh:
             )
         )
 
-        with pytest.raises(NotAuthorizedException):
-            await authenticated_client.get_user_detail()
-        authenticated_client.cognito.check_token.assert_called_once()
+        with respx.mock:
+            route = respx.get(USER_URL).mock(return_value=httpx.Response(401))
+            with pytest.raises(NotAuthorizedException):
+                await authenticated_client.get_user_detail()
+
+        assert route.call_count == 1
+        authenticated_client.cognito.renew_access_token.assert_called_once()
 
     async def test_refresh_token_only_resumption(self):
         client = Evnex(
@@ -158,10 +163,7 @@ class TestResumedTokenVerification:
 
 
 class TestUnauthorizedResponses:
-    async def test_401_with_renewed_token_retries_request(self, authenticated_client):
-        # Valid before the first request; found expired+renewed after the 401
-        authenticated_client.cognito.check_token.side_effect = [False, True, False]
-
+    async def test_401_refreshes_and_retries_request(self, authenticated_client):
         with respx.mock:
             route = respx.get(USER_URL)
             route.side_effect = [
@@ -172,20 +174,28 @@ class TestUnauthorizedResponses:
 
         assert user.name == "Test User"
         assert route.call_count == 2
+        authenticated_client.cognito.renew_access_token.assert_called_once()
 
-    async def test_401_with_valid_token_fails_without_retry(self, authenticated_client):
+    async def test_401_reauthenticates_without_refresh_token(self, client):
+        # Sessions without a refresh token fall back to password auth
+        client.cognito.access_token = "access-0"
+        client.cognito.id_token = "id-0"
+
         with respx.mock:
-            route = respx.get(USER_URL).mock(return_value=httpx.Response(401))
-            with pytest.raises(NotAuthorizedException):
-                await authenticated_client.get_user_detail()
+            route = respx.get(USER_URL)
+            route.side_effect = [
+                httpx.Response(401),
+                httpx.Response(200, json=USER_PAYLOAD),
+            ]
+            user = await client.get_user_detail()
 
-        assert route.call_count == 1
+        assert user.name == "Test User"
+        client.cognito.authenticate.assert_called_once()
+        client.cognito.renew_access_token.assert_not_called()
 
     async def test_persistent_401_despite_renewals_exhausts_retries(
         self, authenticated_client
     ):
-        authenticated_client.cognito.check_token.return_value = True
-
         with respx.mock:
             route = respx.get(USER_URL).mock(return_value=httpx.Response(401))
             with pytest.raises(NotAuthorizedException):
@@ -193,6 +203,28 @@ class TestUnauthorizedResponses:
 
         # Bounded by stop_after_attempt(5), not an endless refresh loop
         assert route.call_count == 5
+
+    async def test_concurrent_401s_refresh_once(self, authenticated_client):
+        # Both coroutines fail with the same stale token; only the first
+        # holder of the lock refreshes, the other retries with new tokens
+        calls = 0
+
+        def respond(request):
+            nonlocal calls
+            calls += 1
+            if request.headers["Authorization"] == "access-0":
+                return httpx.Response(401)
+            return httpx.Response(200, json=USER_PAYLOAD)
+
+        with respx.mock:
+            respx.get(USER_URL).mock(side_effect=respond)
+            users = await asyncio.gather(
+                authenticated_client.get_user_detail(),
+                authenticated_client.get_user_detail(),
+            )
+
+        assert all(user.name == "Test User" for user in users)
+        authenticated_client.cognito.renew_access_token.assert_called_once()
 
 
 class TestMFAChallengeResponse:

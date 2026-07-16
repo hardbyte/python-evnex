@@ -103,7 +103,8 @@ evnex.respond_to_mfa_challenge(code, "TOTP", mfa_tokens=challenge_session)
 
 To avoid interactive MFA on every start, store the tokens after a successful
 authentication and pass them back in later — the refresh token alone is
-enough. Access tokens are refreshed automatically when they expire:
+enough. When the API rejects an expired or revoked access token, the client
+refreshes it and retries the request automatically:
 
 ```python
 evnex = Evnex(username=username, password=password, refresh_token=refresh_token)
