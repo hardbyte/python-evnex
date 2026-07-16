@@ -30,9 +30,10 @@ class FakeCognito:
         self.refresh_token = refresh_token
         self.access_token = access_token
         self.mfa_tokens = None
+        self._token_serial = 0
         self.authenticate = MagicMock(side_effect=self._issue_tokens)
         self.check_token = MagicMock(return_value=False, side_effect=self._block)
-        self.renew_access_token = MagicMock(side_effect=self._block)
+        self.renew_access_token = MagicMock(side_effect=self._rotate_tokens)
         self.verify_tokens = MagicMock(side_effect=self._block)
         self.respond_to_sms_mfa_challenge = MagicMock(side_effect=self._block)
         self.respond_to_software_token_mfa_challenge = MagicMock(
@@ -49,6 +50,12 @@ class FakeCognito:
         self.access_token = "access-0"
         self.id_token = "id-0"
         self.refresh_token = "refresh-0"
+
+    def _rotate_tokens(self):
+        self._block()
+        self._token_serial += 1
+        self.access_token = f"access-{self._token_serial}"
+        self.id_token = f"id-{self._token_serial}"
 
 
 @pytest.fixture(autouse=True)
