@@ -19,6 +19,12 @@ dependencies = [
     "pydantic-settings>=2.2,<3.0",
 ]
 
+[project.optional-dependencies]
+cli = ["qrcode>=8.0"]
+
+[project.scripts]
+evnex = "evnex.cli:main"
+
 [dependency-groups]
 dev = [
     "ruff>=0.12.10",

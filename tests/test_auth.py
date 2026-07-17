@@ -35,7 +35,7 @@ USER_URL = "https://client-api.evnex.io/v2/apps/user"
 
 USER_PAYLOAD = {
     "data": {
-        "id": "b102b5e3-2b00-4f6b-9b0c-b579c609f969",
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
         "createdDate": "2022-01-01T00:00:00Z",
         "updatedDate": "2022-01-01T00:00:00Z",
         "name": "Test User",

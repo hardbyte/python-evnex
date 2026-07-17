@@ -123,6 +123,35 @@ await auth.set_mfa_preference()               # disable MFA entirely
 Completing a new TOTP enrollment replaces the previously registered
 authenticator device.
 
+## Command line
+
+Everything above is also available as a CLI, runnable directly with
+[uv](https://docs.astral.sh/uv/):
+
+```shell
+export EVNEX_CLIENT_USERNAME=you@example.com
+export EVNEX_CLIENT_PASSWORD=<your password>
+
+uvx evnex auth status                # which MFA methods are enabled
+uvx evnex auth enroll-totp           # start enrolling a (new) TOTP device
+uvx evnex auth confirm-totp 123456 --device-name "My phone"
+uvx evnex auth disable               # turn MFA off entirely
+```
+
+`enroll-totp` prints an `otpauth://` URI you can paste straight into a
+password manager's one-time password field. For a scannable QR code (in the
+terminal, or the browser with `--browser`), include the optional qrcode
+dependency: `uvx --with qrcode evnex auth enroll-totp`.
+
+Session tokens are cached (mode 0600, `~/.cache/evnex/tokens.json` by
+default) so an MFA sign-in is only needed occasionally. To answer sign-in
+challenges from a password manager instead of typing codes — for example
+with the [1Password CLI](https://developer.1password.com/docs/cli/) v2+:
+
+```shell
+uvx evnex auth --code-command 'op item get Evnex --otp' signin
+```
+
 ## Examples
 
 `python-evnex` is intended as a library, but a few example scripts are provided in the `examples` folder.
