@@ -1,59 +1,46 @@
 #!/usr/bin/env python3
 """
-Example script to get a token from AWS cognito. Supports MFA authentication.
+Example: sign in (with MFA if enabled) and print the session tokens.
 """
 
 import asyncio
 import logging
-
-from pycognito.exceptions import (
-    SMSMFAChallengeException,
-    SoftwareTokenMFAChallengeException,
-)
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
 from evnex.api import Evnex
+from evnex.auth import AuthChallenge, EvnexAuth, TokenSet
 
 
-class EvnexAuthDetails(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVNEX_")
-
-    CLIENT_USERNAME: str
-    CLIENT_PASSWORD: SecretStr
-    ID_TOKEN: str | None = None
-    REFRESH_TOKEN: str | None = None
-    ACCESS_TOKEN: str | None = None
+async def save_tokens(tokens: TokenSet) -> None:
+    # A real application would persist these atomically
+    print("New tokens issued; persist them for next time")
 
 
 async def main():
-    creds = EvnexAuthDetails()
-    evnex = Evnex(
-        username=creds.CLIENT_USERNAME,
-        password=creds.CLIENT_PASSWORD.get_secret_value(),
-        id_token=creds.ID_TOKEN,
-        refresh_token=creds.REFRESH_TOKEN,
-        access_token=creds.ACCESS_TOKEN,
-    )
+    tokens = None
+    if os.environ.get("EVNEX_ACCESS_TOKEN") or os.environ.get("EVNEX_REFRESH_TOKEN"):
+        tokens = TokenSet(
+            access_token=os.environ.get("EVNEX_ACCESS_TOKEN"),
+            refresh_token=os.environ.get("EVNEX_REFRESH_TOKEN"),
+        )
 
-    if not creds.ACCESS_TOKEN and not creds.REFRESH_TOKEN:
-        try:
-            evnex.authenticate()
+    auth = EvnexAuth(tokens=tokens, on_token_update=save_tokens)
 
-        except SMSMFAChallengeException:
-            code = input("Enter the 6-digit code you received by SMS: ")
-            evnex.respond_to_mfa_challenge(code, "SMS")
+    if tokens is None:
+        result = await auth.start_authentication(
+            os.environ["EVNEX_CLIENT_USERNAME"], os.environ["EVNEX_CLIENT_PASSWORD"]
+        )
+        while isinstance(result, AuthChallenge):
+            code = input(f"Enter the code for challenge {result.name}: ")
+            result = await auth.respond_to_challenge(result, code)
 
-        except SoftwareTokenMFAChallengeException:
-            code = input("Enter the 6-digit code from your authenticator application: ")
-            evnex.respond_to_mfa_challenge(code, "TOTP")
+    evnex = Evnex(auth=auth)
+    user = await evnex.get_user_detail()
+    print("User Name:", user.name or user.email)
 
-    user_details = await evnex.get_user_detail()
-    print("User Name:", user_details.name)
-
-    print("Access Token: ", evnex.access_token)
-    print("Refresh Token: ", evnex.refresh_token)
-    print("ID Token: ", evnex.id_token)
+    print("Access Token: ", auth.tokens.access_token)
+    print("Refresh Token: ", auth.tokens.refresh_token)
+    print("Expires At: ", auth.tokens.expires_at)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
 [project]
 name = "evnex"
-version = "0.6.1"
+version = "0.7.0"
 description = "A Python wrapper for the EVNEX Cloud API"
 authors = [{ name = "Brian Thorne", email = "brian@hardbyte.nz" }]
 readme = "README.md"
@@ -15,6 +15,7 @@ dependencies = [
     "boto3>=1.26,<2.0",
     "pydantic>2.0.0,<3.0.0",
     "tenacity>=8.1,<10.0",
+    "pyjwt>=2.8,<3.0",
     "pydantic-settings>=2.2,<3.0",
 ]
 

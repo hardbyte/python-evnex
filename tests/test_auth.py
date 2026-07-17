@@ -1,4 +1,4 @@
-"""Tests for authentication, token refresh, MFA and retry behaviour.
+"""Tests for the EvnexAuth token lifecycle and transport-level 401 recovery.
 
 Cognito is replaced with an offline fake (see conftest.FakeCognito); HTTP
 calls are mocked with respx; blockbuster fails any test that runs blocking
@@ -6,18 +6,30 @@ I/O on the event loop.
 """
 
 import asyncio
+from datetime import timedelta
 
 import botocore.exceptions
 import httpx
 import pytest
 import respx
-from pycognito.exceptions import (
-    SoftwareTokenMFAChallengeException,
-    TokenVerificationException,
-)
+from pycognito.exceptions import SoftwareTokenMFAChallengeException
 
 from evnex.api import Evnex
-from evnex.errors import NotAuthorizedException
+from evnex.auth import (
+    CHALLENGE_SOFTWARE_TOKEN_MFA,
+    AuthChallenge,
+    EvnexAuth,
+    TokenSet,
+)
+from evnex.errors import (
+    ChallengeExpiredError,
+    EvnexAuthError,
+    InvalidChallengeResponseError,
+    InvalidCredentialsError,
+    ReauthenticationRequiredError,
+)
+
+from .conftest import make_jwt
 
 USER_URL = "https://client-api.evnex.io/v2/apps/user"
 
@@ -28,190 +40,245 @@ USER_PAYLOAD = {
         "updatedDate": "2022-01-01T00:00:00Z",
         "name": "Test User",
         "email": "user@example.com",
-        "organisations": [
-            {
-                "id": "org-1",
-                "isDefault": True,
-                "role": 1,
-                "createdDate": "2022-01-01T00:00:00Z",
-                "name": "Home",
-                "slug": "home",
-                "tier": 1,
-                "updatedDate": "2022-01-01T00:00:00Z",
-            }
-        ],
+        "organisations": [],
     }
 }
 
 
-class TestFirstUseAuthentication:
-    async def test_first_call_authenticates_automatically(self, client):
+def client_error(code: str, message: str = "nope") -> botocore.exceptions.ClientError:
+    return botocore.exceptions.ClientError(
+        {"Error": {"Code": code, "Message": message}}, "SomeOperation"
+    )
+
+
+def mfa_challenge_exception() -> SoftwareTokenMFAChallengeException:
+    return SoftwareTokenMFAChallengeException(
+        "Do Software Token MFA",
+        {
+            "ChallengeName": CHALLENGE_SOFTWARE_TOKEN_MFA,
+            "Session": "opaque-session",
+            "ChallengeParameters": {"FRIENDLY_DEVICE_NAME": "My TOTP device"},
+        },
+    )
+
+
+class TestTokenSet:
+    def test_round_trips_through_dict(self):
+        tokens = TokenSet(
+            access_token=make_jwt(), id_token="id", refresh_token="refresh"
+        )
+        restored = TokenSet.from_dict(tokens.to_dict())
+        assert restored == tokens
+
+    def test_expiry_derived_from_jwt_when_missing(self):
+        data = {"access_token": make_jwt(timedelta(hours=1)), "refresh_token": "r"}
+        tokens = TokenSet.from_dict(data)
+        assert tokens.expires_at is not None
+
+    def test_repr_redacts_tokens(self):
+        tokens = TokenSet(access_token="secret-access", refresh_token="secret-refresh")
+        assert "secret" not in repr(tokens)
+
+
+class TestAuthChallenge:
+    def test_round_trips_through_dict(self):
+        challenge = AuthChallenge(
+            name=CHALLENGE_SOFTWARE_TOKEN_MFA,
+            session="s",
+            username="user@example.com",
+            parameters={"FRIENDLY_DEVICE_NAME": "phone"},
+        )
+        assert AuthChallenge.from_dict(challenge.to_dict()) == challenge
+
+
+class TestInteractiveAuthentication:
+    async def test_password_only_success(self, auth, token_updates):
+        result = await auth.start_authentication("user@example.com", "hunter2")
+
+        assert isinstance(result, TokenSet)
+        assert auth.tokens is result
+        assert token_updates == [result]
+
+    async def test_mfa_challenge_returned(self, auth, token_updates):
+        # First call builds the fake cognito so the side effect can be set
+        await auth.start_authentication("user@example.com", "hunter2")
+        auth._cognito.authenticate.side_effect = mfa_challenge_exception()
+        auth._tokens = None
+        token_updates.clear()
+
+        challenge = await auth.start_authentication("user@example.com", "hunter2")
+
+        assert isinstance(challenge, AuthChallenge)
+        assert challenge.name == CHALLENGE_SOFTWARE_TOKEN_MFA
+        assert challenge.username == "user@example.com"
+        assert challenge.parameters["FRIENDLY_DEVICE_NAME"] == "My TOTP device"
+        assert auth.tokens is None
+        assert token_updates == []
+
+    async def test_challenge_response_issues_tokens(self, auth, token_updates):
+        challenge = AuthChallenge(
+            name=CHALLENGE_SOFTWARE_TOKEN_MFA,
+            session="opaque-session",
+            username="user@example.com",
+        )
+        result = await auth.respond_to_challenge(challenge, "123456")
+
+        assert isinstance(result, TokenSet)
+        assert auth.tokens is result
+        assert token_updates == [result]
+        auth._cognito.respond_to_software_token_mfa_challenge.assert_called_once_with(
+            "123456",
+            mfa_tokens={
+                "ChallengeName": CHALLENGE_SOFTWARE_TOKEN_MFA,
+                "Session": "opaque-session",
+            },
+        )
+
+    async def test_wrong_code_raises_invalid_response(self, auth):
+        challenge = AuthChallenge(
+            name=CHALLENGE_SOFTWARE_TOKEN_MFA, session="s", username="u"
+        )
+        await auth.start_authentication("u", "p")  # builds the fake cognito
+        auth._cognito.respond_to_software_token_mfa_challenge.side_effect = (
+            client_error("CodeMismatchException")
+        )
+
+        with pytest.raises(InvalidChallengeResponseError):
+            await auth.respond_to_challenge(challenge, "000000")
+
+    async def test_expired_session_raises_challenge_expired(self, auth):
+        challenge = AuthChallenge(
+            name=CHALLENGE_SOFTWARE_TOKEN_MFA, session="s", username="u"
+        )
+        await auth.start_authentication("u", "p")
+        auth._cognito.respond_to_software_token_mfa_challenge.side_effect = (
+            client_error("NotAuthorizedException", "Invalid session for the user")
+        )
+
+        with pytest.raises(ChallengeExpiredError):
+            await auth.respond_to_challenge(challenge, "123456")
+
+    async def test_unsupported_challenge_type(self, auth):
+        challenge = AuthChallenge(
+            name="NEW_PASSWORD_REQUIRED", session="s", username="u"
+        )
+
+        with pytest.raises(EvnexAuthError, match="NEW_PASSWORD_REQUIRED"):
+            await auth.respond_to_challenge(challenge, "irrelevant")
+
+    async def test_invalid_credentials(self, auth):
+        await auth.start_authentication("u", "p")
+        auth._cognito.authenticate.side_effect = client_error(
+            "NotAuthorizedException", "Incorrect username or password."
+        )
+
+        with pytest.raises(InvalidCredentialsError):
+            await auth.start_authentication("u", "wrong")
+
+    async def test_deprecated_not_authorized_exception_alias(self):
+        with pytest.warns(DeprecationWarning, match="NotAuthorizedException"):
+            from evnex.errors import NotAuthorizedException
+        # Existing handlers keep working: the alias is the new base class,
+        # which remains a ValueError like the original
+        assert NotAuthorizedException is EvnexAuthError
+        assert issubclass(InvalidCredentialsError, ValueError)
+
+
+class TestTokenLifecycle:
+    async def test_resume_needs_no_credentials(self, resumed_auth):
+        token = await resumed_auth.get_access_token()
+        assert token == "access-0"
+
+    async def test_no_session_raises_reauthentication_required(self, auth):
+        with pytest.raises(ReauthenticationRequiredError):
+            await auth.get_access_token()
+
+    async def test_expired_token_refreshed_proactively(self):
+        expired = make_jwt(timedelta(seconds=-60))
+        auth = EvnexAuth(
+            tokens=TokenSet(access_token=expired, refresh_token="refresh-0")
+        )
+        token = await auth.get_access_token()
+
+        assert token == "access-1"
+        assert auth.tokens.refresh_token == "refresh-0"  # carried forward
+
+    async def test_force_refresh_single_flight(self, resumed_auth):
+        results = await asyncio.gather(
+            resumed_auth.force_refresh(stale_access_token="access-0"),
+            resumed_auth.force_refresh(stale_access_token="access-0"),
+        )
+
+        assert results[0] == results[1]
+        resumed_auth._cognito.renew_access_token.assert_called_once()
+
+    async def test_refresh_without_refresh_token(self):
+        auth = EvnexAuth(tokens=TokenSet(access_token="access-0"))
+        with pytest.raises(ReauthenticationRequiredError):
+            await auth.force_refresh(stale_access_token="access-0")
+
+    async def test_callback_failure_does_not_break_auth(self, caplog):
+        async def failing_callback(tokens: TokenSet) -> None:
+            raise RuntimeError("disk full")
+
+        auth = EvnexAuth(on_token_update=failing_callback)
+        result = await auth.start_authentication("u", "p")
+
+        assert isinstance(result, TokenSet)
+        assert auth.tokens is result
+        assert "on_token_update callback failed" in caplog.text
+
+
+class TestTransport:
+    async def test_request_carries_access_token(self, client):
         with respx.mock:
-            respx.get(USER_URL).mock(
+            route = respx.get(USER_URL).mock(
                 return_value=httpx.Response(200, json=USER_PAYLOAD)
             )
             user = await client.get_user_detail()
 
         assert user.name == "Test User"
-        client.cognito.authenticate.assert_called_once()
+        assert route.calls[0].request.headers["Authorization"] == "access-0"
 
-    async def test_auth_failure_raises_immediately(self, client):
-        client.cognito.authenticate.side_effect = botocore.exceptions.ClientError(
-            {"Error": {"Code": "NotAuthorizedException", "Message": "Bad creds"}},
-            "InitiateAuth",
-        )
-
-        with pytest.raises(NotAuthorizedException):
-            await client.get_user_detail()
-        # Never retried: auth errors would lock accounts and can't self-heal
-        client.cognito.authenticate.assert_called_once()
-
-    async def test_mfa_challenge_propagates_without_retry(self, client):
-        client.cognito.authenticate.side_effect = SoftwareTokenMFAChallengeException(
-            "MFA challenge", {"ChallengeName": "SOFTWARE_TOKEN_MFA", "Session": "s"}
-        )
-
-        with pytest.raises(SoftwareTokenMFAChallengeException):
-            await client.get_user_detail()
-        client.cognito.authenticate.assert_called_once()
-
-    async def test_concurrent_first_calls_authenticate_once(self, client):
-        with respx.mock:
-            respx.get(USER_URL).mock(
-                return_value=httpx.Response(200, json=USER_PAYLOAD)
-            )
-            await asyncio.gather(client.get_user_detail(), client.get_user_detail())
-
-        client.cognito.authenticate.assert_called_once()
-
-
-class TestTokenRefresh:
-    async def test_no_proactive_checks_on_happy_path(self, authenticated_client):
-        with respx.mock:
-            respx.get(USER_URL).mock(
-                return_value=httpx.Response(200, json=USER_PAYLOAD)
-            )
-            await authenticated_client.get_user_detail()
-            await authenticated_client.get_user_detail()
-
-        # Expiry is handled reactively via 401 responses, so successful
-        # requests never touch Cognito
-        authenticated_client.cognito.check_token.assert_not_called()
-        authenticated_client.cognito.renew_access_token.assert_not_called()
-
-    async def test_refresh_failure_wrapped_and_not_retried(self, authenticated_client):
-        authenticated_client.cognito.renew_access_token.side_effect = (
-            botocore.exceptions.ClientError(
-                {
-                    "Error": {
-                        "Code": "NotAuthorized",
-                        "Message": "Refresh token expired",
-                    }
-                },
-                "InitiateAuth",
-            )
-        )
+    async def test_401_refreshes_and_resends_once(self, client, token_updates):
+        def respond(request):
+            if request.headers["Authorization"] == "access-0":
+                return httpx.Response(401)
+            return httpx.Response(200, json=USER_PAYLOAD)
 
         with respx.mock:
-            route = respx.get(USER_URL).mock(return_value=httpx.Response(401))
-            with pytest.raises(NotAuthorizedException):
-                await authenticated_client.get_user_detail()
-
-        assert route.call_count == 1
-        authenticated_client.cognito.renew_access_token.assert_called_once()
-
-    async def test_refresh_token_only_resumption(self):
-        client = Evnex(
-            username="user@example.com", password="hunter2", refresh_token="refresh-0"
-        )
-
-        def do_renew():
-            client.cognito.access_token = "access-1"
-            client.cognito.id_token = "id-1"
-
-        client.cognito.renew_access_token.side_effect = do_renew
-
-        with respx.mock:
-            respx.get(USER_URL).mock(
-                return_value=httpx.Response(200, json=USER_PAYLOAD)
-            )
+            route = respx.get(USER_URL).mock(side_effect=respond)
             user = await client.get_user_detail()
-
-        assert user.name == "Test User"
-        client.cognito.renew_access_token.assert_called_once()
-        client.cognito.authenticate.assert_not_called()
-
-
-class TestResumedTokenVerification:
-    async def test_resumed_tokens_verified_once_on_first_use(self, resumed_client):
-        with respx.mock:
-            respx.get(USER_URL).mock(
-                return_value=httpx.Response(200, json=USER_PAYLOAD)
-            )
-            await resumed_client.get_user_detail()
-            await resumed_client.get_user_detail()
-
-        resumed_client.cognito.verify_tokens.assert_called_once()
-
-    async def test_invalid_resumed_tokens_raise_not_authorized(self, resumed_client):
-        resumed_client.cognito.verify_tokens.side_effect = TokenVerificationException(
-            "bad signature"
-        )
-
-        with pytest.raises(NotAuthorizedException):
-            await resumed_client.get_user_detail()
-
-
-class TestUnauthorizedResponses:
-    async def test_401_refreshes_and_retries_request(self, authenticated_client):
-        with respx.mock:
-            route = respx.get(USER_URL)
-            route.side_effect = [
-                httpx.Response(401),
-                httpx.Response(200, json=USER_PAYLOAD),
-            ]
-            user = await authenticated_client.get_user_detail()
 
         assert user.name == "Test User"
         assert route.call_count == 2
-        authenticated_client.cognito.renew_access_token.assert_called_once()
+        assert route.calls[1].request.headers["Authorization"] == "access-1"
+        # The rotated tokens were published before the resend completed
+        assert token_updates and token_updates[0].access_token == "access-1"
 
-    async def test_401_reauthenticates_without_refresh_token(self, client):
-        # Sessions without a refresh token fall back to password auth
-        client.cognito.access_token = "access-0"
-        client.cognito.id_token = "id-0"
-
-        with respx.mock:
-            route = respx.get(USER_URL)
-            route.side_effect = [
-                httpx.Response(401),
-                httpx.Response(200, json=USER_PAYLOAD),
-            ]
-            user = await client.get_user_detail()
-
-        assert user.name == "Test User"
-        client.cognito.authenticate.assert_called_once()
-        client.cognito.renew_access_token.assert_not_called()
-
-    async def test_persistent_401_despite_renewals_exhausts_retries(
-        self, authenticated_client
-    ):
+    async def test_persistent_401_not_retried_by_tenacity(self, client):
         with respx.mock:
             route = respx.get(USER_URL).mock(return_value=httpx.Response(401))
-            with pytest.raises(NotAuthorizedException):
-                await authenticated_client.get_user_detail()
+            with pytest.raises(ReauthenticationRequiredError):
+                await client.get_user_detail()
 
-        # Bounded by stop_after_attempt(5), not an endless refresh loop
-        assert route.call_count == 5
+        # One original request + exactly one auth-flow resend; the generic
+        # retry policy must not multiply auth recovery
+        assert route.call_count == 2
 
-    async def test_concurrent_401s_refresh_once(self, authenticated_client):
-        # Both coroutines fail with the same stale token; only the first
-        # holder of the lock refreshes, the other retries with new tokens
-        calls = 0
+    async def test_no_tokens_fails_before_any_request(self, auth):
+        client = Evnex(auth=auth)
+        with respx.mock:
+            route = respx.get(USER_URL).mock(
+                return_value=httpx.Response(200, json=USER_PAYLOAD)
+            )
+            with pytest.raises(ReauthenticationRequiredError):
+                await client.get_user_detail()
 
+        assert route.call_count == 0
+
+    async def test_concurrent_401s_refresh_once(self, client):
         def respond(request):
-            nonlocal calls
-            calls += 1
             if request.headers["Authorization"] == "access-0":
                 return httpx.Response(401)
             return httpx.Response(200, json=USER_PAYLOAD)
@@ -219,31 +286,170 @@ class TestUnauthorizedResponses:
         with respx.mock:
             respx.get(USER_URL).mock(side_effect=respond)
             users = await asyncio.gather(
-                authenticated_client.get_user_detail(),
-                authenticated_client.get_user_detail(),
+                client.get_user_detail(), client.get_user_detail()
             )
 
         assert all(user.name == "Test User" for user in users)
-        authenticated_client.cognito.renew_access_token.assert_called_once()
+        client.auth._cognito.renew_access_token.assert_called_once()
 
 
-class TestMFAChallengeResponse:
-    def test_invalid_mode_raises_value_error(self, client):
-        with pytest.raises(ValueError, match="Unknown MFA mode"):
-            client.respond_to_mfa_challenge("123456", "sms")
+class TestTokenSetResumption:
+    """Refresh-token-only resumption, persistence ordering, retry surfaces."""
 
-    def test_totp_mode_delegates_with_mfa_tokens(self, client):
-        client.respond_to_mfa_challenge("123456", "TOTP", mfa_tokens={"Session": "s"})
-        client.cognito.respond_to_software_token_mfa_challenge.assert_called_once_with(
-            "123456", mfa_tokens={"Session": "s"}
+    async def test_refresh_token_only_token_set(self):
+        # Constructible without an access token, including via from_dict
+        tokens = TokenSet(refresh_token="refresh-0")
+        assert tokens.access_token is None
+        assert TokenSet.from_dict({"refresh_token": "refresh-0"}) == tokens
+
+        auth = EvnexAuth(tokens=tokens)
+        assert await auth.get_access_token() == "access-1"
+
+    async def test_refresh_only_resume_makes_no_wasted_request(self):
+        auth = EvnexAuth(tokens=TokenSet(refresh_token="refresh-0"))
+        client = Evnex(auth=auth)
+
+        with respx.mock:
+            route = respx.get(USER_URL).mock(
+                return_value=httpx.Response(200, json=USER_PAYLOAD)
+            )
+            await client.get_user_detail()
+
+        # The refresh happened before the request, not via a 401 round-trip
+        assert route.call_count == 1
+        assert route.calls[0].request.headers["Authorization"] == "access-1"
+
+    async def test_concurrent_refresh_only_startup_single_flight(self):
+        auth = EvnexAuth(tokens=TokenSet(refresh_token="refresh-0"))
+        client = Evnex(auth=auth)
+
+        with respx.mock:
+            respx.get(USER_URL).mock(
+                return_value=httpx.Response(200, json=USER_PAYLOAD)
+            )
+            await asyncio.gather(client.get_user_detail(), client.get_user_detail())
+
+        auth._cognito.renew_access_token.assert_called_once()
+
+    async def test_tokens_published_only_after_persistence(self):
+        gate = asyncio.Event()
+        observed_during_persist = []
+
+        async def slow_save(tokens: TokenSet) -> None:
+            observed_during_persist.append(auth.tokens)
+            await gate.wait()
+
+        auth = EvnexAuth(
+            tokens=TokenSet(refresh_token="refresh-0"), on_token_update=slow_save
+        )
+        refresh = asyncio.create_task(auth.force_refresh())
+        while not observed_during_persist:
+            await asyncio.sleep(0)
+
+        # Mid-persistence, other tasks must still see the old token set
+        assert observed_during_persist[0] is not None
+        assert observed_during_persist[0].access_token is None
+        assert auth.tokens.access_token is None
+
+        gate.set()
+        new_tokens = await refresh
+        assert auth.tokens is new_tokens
+
+    async def test_retry_exhaustion_reraises_underlying_error(self, client):
+        with respx.mock:
+            route = respx.get(USER_URL).mock(
+                side_effect=httpx.ConnectError("connection refused")
+            )
+            with pytest.raises(httpx.ConnectError):
+                await client.get_user_detail()
+
+        assert route.call_count == 5  # stop_after_attempt, then reraise
+
+    async def test_override_persistent_401_not_retried(self, resumed_auth, monkeypatch):
+        from tenacity import wait_none
+
+        client = Evnex(auth=resumed_auth)
+        monkeypatch.setattr(Evnex.set_charge_point_override.retry, "wait", wait_none())
+        override_url = (
+            "https://client-api.evnex.io/charge-points/cp-1/commands/set-override"
         )
 
-    def test_rejected_code_raises_not_authorized(self, client):
-        client.cognito.respond_to_sms_mfa_challenge.side_effect = (
-            botocore.exceptions.ClientError(
-                {"Error": {"Code": "CodeMismatchException", "Message": "Wrong code"}},
-                "RespondToAuthChallenge",
+        with respx.mock:
+            route = respx.post(override_url).mock(return_value=httpx.Response(401))
+            with pytest.raises(ReauthenticationRequiredError):
+                await client.set_charge_point_override(
+                    charge_point_id="cp-1", charge_now=True
+                )
+
+        # One original send + exactly one auth-flow resend; the command was
+        # never submitted repeatedly
+        assert route.call_count == 2
+
+
+class TestErrorSurfaces:
+    """Exception mapping, datetime normalisation, and command retry safety."""
+
+    async def test_force_change_password_maps_to_typed_error(self, auth):
+        from pycognito.exceptions import ForceChangePasswordException
+
+        from evnex.errors import PasswordChangeRequiredError
+
+        await auth.start_authentication("u", "p")  # builds the fake cognito
+        auth._cognito.authenticate.side_effect = ForceChangePasswordException(
+            "Change your password"
+        )
+
+        with pytest.raises(PasswordChangeRequiredError):
+            await auth.start_authentication("u", "p")
+
+    async def test_token_verification_failure_on_refresh(self, resumed_auth):
+        from pycognito.exceptions import TokenVerificationException
+
+        await asyncio.to_thread(resumed_auth._ensure_cognito)  # lazy build
+        resumed_auth._cognito.renew_access_token.side_effect = (
+            TokenVerificationException("Your access token could not be verified")
+        )
+
+        with pytest.raises(ReauthenticationRequiredError):
+            await resumed_auth.force_refresh(stale_access_token="access-0")
+
+    async def test_naive_expires_at_is_normalised_to_utc(self):
+        from datetime import UTC, datetime
+
+        naive = datetime(2030, 1, 1, 12, 0, 0)
+        tokens = TokenSet(access_token="access-0", expires_at=naive)
+        assert tokens.expires_at.tzinfo is UTC
+
+        # And the expiry comparison in get_access_token no longer raises
+        auth = EvnexAuth(
+            tokens=TokenSet(
+                access_token="access-0",
+                refresh_token="refresh-0",
+                expires_at=datetime(2020, 1, 1),  # naive, in the past
             )
         )
-        with pytest.raises(NotAuthorizedException):
-            client.respond_to_mfa_challenge("123456", "SMS")
+        assert await auth.get_access_token() == "access-1"
+
+    async def test_command_http_error_not_retried(self, resumed_auth):
+        client = Evnex(auth=resumed_auth)
+        override_url = (
+            "https://client-api.evnex.io/charge-points/cp-1/commands/set-override"
+        )
+
+        with respx.mock:
+            route = respx.post(override_url).mock(return_value=httpx.Response(503))
+            with pytest.raises(httpx.HTTPStatusError):
+                await client.set_charge_point_override(
+                    charge_point_id="cp-1", charge_now=True
+                )
+
+        # The command was submitted exactly once
+        assert route.call_count == 1
+
+    def test_challenge_repr_redacts_username(self):
+        challenge = AuthChallenge(
+            name=CHALLENGE_SOFTWARE_TOKEN_MFA,
+            session="opaque",
+            username="user@example.com",
+        )
+        assert "user@example.com" not in repr(challenge)
