@@ -23,5 +23,9 @@ class ChallengeExpiredError(EvnexAuthError):
     """The short-lived challenge session lapsed; restart authentication."""
 
 
+class PasswordChangeRequiredError(EvnexAuthError):
+    """Cognito requires a new password before this account can sign in."""
+
+
 class InvalidChallengeResponseError(EvnexAuthError):
     """The challenge response (e.g. MFA code) was rejected; retry is possible."""

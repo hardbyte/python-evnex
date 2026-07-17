@@ -382,3 +382,72 @@ class TestReviewRegressions:
         # One original send + exactly one auth-flow resend; the command was
         # never submitted repeatedly
         assert route.call_count == 2
+
+
+class TestSecondReviewRegressions:
+    """Regressions for the adversarial review findings."""
+
+    async def test_force_change_password_maps_to_typed_error(self, auth):
+        from pycognito.exceptions import ForceChangePasswordException
+
+        from evnex.errors import PasswordChangeRequiredError
+
+        await auth.start_authentication("u", "p")  # builds the fake cognito
+        auth._cognito.authenticate.side_effect = ForceChangePasswordException(
+            "Change your password"
+        )
+
+        with pytest.raises(PasswordChangeRequiredError):
+            await auth.start_authentication("u", "p")
+
+    async def test_token_verification_failure_on_refresh(self, resumed_auth):
+        from pycognito.exceptions import TokenVerificationException
+
+        await asyncio.to_thread(resumed_auth._ensure_cognito)  # lazy build
+        resumed_auth._cognito.renew_access_token.side_effect = (
+            TokenVerificationException("Your access token could not be verified")
+        )
+
+        with pytest.raises(ReauthenticationRequiredError):
+            await resumed_auth.force_refresh(stale_access_token="access-0")
+
+    async def test_naive_expires_at_is_normalised_to_utc(self):
+        from datetime import UTC, datetime
+
+        naive = datetime(2030, 1, 1, 12, 0, 0)
+        tokens = TokenSet(access_token="access-0", expires_at=naive)
+        assert tokens.expires_at.tzinfo is UTC
+
+        # And the expiry comparison in get_access_token no longer raises
+        auth = EvnexAuth(
+            tokens=TokenSet(
+                access_token="access-0",
+                refresh_token="refresh-0",
+                expires_at=datetime(2020, 1, 1),  # naive, in the past
+            )
+        )
+        assert await auth.get_access_token() == "access-1"
+
+    async def test_command_http_error_not_retried(self, resumed_auth):
+        client = Evnex(auth=resumed_auth)
+        override_url = (
+            "https://client-api.evnex.io/charge-points/cp-1/commands/set-override"
+        )
+
+        with respx.mock:
+            route = respx.post(override_url).mock(return_value=httpx.Response(503))
+            with pytest.raises(httpx.HTTPStatusError):
+                await client.set_charge_point_override(
+                    charge_point_id="cp-1", charge_now=True
+                )
+
+        # The command was submitted exactly once
+        assert route.call_count == 1
+
+    def test_challenge_repr_redacts_username(self):
+        challenge = AuthChallenge(
+            name=CHALLENGE_SOFTWARE_TOKEN_MFA,
+            session="opaque",
+            username="user@example.com",
+        )
+        assert "user@example.com" not in repr(challenge)

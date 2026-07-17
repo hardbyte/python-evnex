@@ -156,7 +156,7 @@ class Evnex:
 
         try:
             return from_json(response.text)
-        except:
+        except Exception:
             logger.debug(
                 f"Invalid json response.\n{response.status_code}\n{response.text}"
             )
@@ -271,7 +271,7 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig.model_validate(json_data)
 
-    @api_retry()
+    @api_retry(HTTPStatusError)
     async def set_charge_point_override(
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
     ):
@@ -346,7 +346,7 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
-    @api_retry(ReadTimeout)
+    @api_retry(HTTPStatusError, ReadTimeout)
     async def stop_charge_point(
         self,
         charge_point_id: str,

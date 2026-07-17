@@ -16,7 +16,12 @@ import botocore.exceptions
 import httpx
 import jwt
 from pycognito import Cognito
-from pycognito.exceptions import MFAChallengeException
+from pycognito.exceptions import (
+    ForceChangePasswordException,
+    MFAChallengeException,
+    TokenVerificationException,
+    WarrantException,
+)
 
 from evnex.config import EvnexConfig
 from evnex.errors import (
@@ -24,6 +29,7 @@ from evnex.errors import (
     EvnexAuthError,
     InvalidChallengeResponseError,
     InvalidCredentialsError,
+    PasswordChangeRequiredError,
     ReauthenticationRequiredError,
 )
 
@@ -64,6 +70,10 @@ class TokenSet:
     def __post_init__(self) -> None:
         if self.expires_at is None and self.access_token:
             object.__setattr__(self, "expires_at", _decode_expiry(self.access_token))
+        elif self.expires_at is not None and self.expires_at.tzinfo is None:
+            # Treat naive datetimes from external stores as UTC so expiry
+            # comparisons never raise
+            object.__setattr__(self, "expires_at", self.expires_at.replace(tzinfo=UTC))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -97,7 +107,7 @@ class AuthChallenge:
 
     name: str
     session: str = field(repr=False)
-    username: str
+    username: str = field(repr=False)
     parameters: Mapping[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -178,6 +188,14 @@ class EvnexAuth:
                 result = await asyncio.to_thread(_authenticate)
             except botocore.exceptions.ClientError as err:
                 raise InvalidCredentialsError(_error_message(err)) from err
+            except ForceChangePasswordException as err:
+                raise PasswordChangeRequiredError(
+                    "Cognito requires a password change before sign-in"
+                ) from err
+            except WarrantException as err:
+                # e.g. TokenVerificationException from pycognito verifying
+                # the freshly issued tokens
+                raise EvnexAuthError(str(err)) from err
             if isinstance(result, TokenSet):
                 await self._store_tokens(result)
             return result
@@ -220,6 +238,8 @@ class EvnexAuth:
                 tokens = await asyncio.to_thread(_respond)
             except botocore.exceptions.ClientError as err:
                 raise _map_challenge_error(err) from err
+            except TokenVerificationException as err:
+                raise EvnexAuthError(str(err)) from err
             await self._store_tokens(tokens)
             return tokens
 
@@ -291,6 +311,12 @@ class EvnexAuth:
                 tokens = await asyncio.to_thread(_renew)
             except botocore.exceptions.ClientError as err:
                 raise ReauthenticationRequiredError(_error_message(err)) from err
+            except WarrantException as err:
+                # The renewed tokens failed pycognito's verification; the
+                # session cannot be trusted. Network errors (requests/boto
+                # connection failures) deliberately propagate: they are
+                # transient and remain retryable.
+                raise ReauthenticationRequiredError(str(err)) from err
             await self._store_tokens(tokens)
             return tokens
 
