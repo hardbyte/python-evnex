@@ -1,14 +1,15 @@
-class NotAuthorizedException(ValueError):
-    """Historic base error for authentication problems.
+"""Typed errors raised by the EVNEX client.
 
-    Retained so existing ``except NotAuthorizedException`` handlers keep
-    working; new code should catch the EvnexAuthError hierarchy below.
-    The inheritance will be removed in 0.8.0.
-    """
+All authentication problems derive from EvnexAuthError; catch that to
+handle "the session is not usable" generically, or a subclass to react to
+a specific condition.
+"""
+
+import warnings
 
 
-class EvnexAuthError(NotAuthorizedException):
-    """Base for authentication lifecycle errors."""
+class EvnexAuthError(ValueError):
+    """Base for authentication and session lifecycle errors."""
 
 
 class InvalidCredentialsError(EvnexAuthError):
@@ -24,8 +25,22 @@ class ChallengeExpiredError(EvnexAuthError):
 
 
 class PasswordChangeRequiredError(EvnexAuthError):
-    """Cognito requires a new password before this account can sign in."""
+    """A new password must be set before this account can sign in."""
 
 
 class InvalidChallengeResponseError(EvnexAuthError):
     """The challenge response (e.g. MFA code) was rejected; retry is possible."""
+
+
+def __getattr__(name: str):
+    # Deprecated alias, served dynamically so importing it warns.
+    # Removed in 0.8.0.
+    if name == "NotAuthorizedException":
+        warnings.warn(
+            "NotAuthorizedException is deprecated and will be removed in "
+            "evnex 0.8.0; catch EvnexAuthError instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return EvnexAuthError
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

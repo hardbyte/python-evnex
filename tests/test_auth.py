@@ -26,7 +26,6 @@ from evnex.errors import (
     EvnexAuthError,
     InvalidChallengeResponseError,
     InvalidCredentialsError,
-    NotAuthorizedException,
     ReauthenticationRequiredError,
 )
 
@@ -176,10 +175,13 @@ class TestInteractiveAuthentication:
         with pytest.raises(InvalidCredentialsError):
             await auth.start_authentication("u", "wrong")
 
-    async def test_auth_errors_are_not_authorized_exceptions(self):
-        # Compat: existing handlers catch NotAuthorizedException
-        assert issubclass(InvalidCredentialsError, NotAuthorizedException)
-        assert issubclass(ReauthenticationRequiredError, NotAuthorizedException)
+    async def test_deprecated_not_authorized_exception_alias(self):
+        with pytest.warns(DeprecationWarning, match="NotAuthorizedException"):
+            from evnex.errors import NotAuthorizedException
+        # Existing handlers keep working: the alias is the new base class,
+        # which remains a ValueError like the original
+        assert NotAuthorizedException is EvnexAuthError
+        assert issubclass(InvalidCredentialsError, ValueError)
 
 
 class TestTokenLifecycle:
@@ -224,7 +226,7 @@ class TestTokenLifecycle:
 
         assert isinstance(result, TokenSet)
         assert auth.tokens is result
-        assert "Token update callback failed" in caplog.text
+        assert "on_token_update callback failed" in caplog.text
 
 
 class TestTransport:
@@ -291,8 +293,8 @@ class TestTransport:
         client.auth._cognito.renew_access_token.assert_called_once()
 
 
-class TestReviewRegressions:
-    """Regressions for the PR #114 review findings."""
+class TestTokenSetResumption:
+    """Refresh-token-only resumption, persistence ordering, retry surfaces."""
 
     async def test_refresh_token_only_token_set(self):
         # Constructible without an access token, including via from_dict
@@ -384,8 +386,8 @@ class TestReviewRegressions:
         assert route.call_count == 2
 
 
-class TestSecondReviewRegressions:
-    """Regressions for the adversarial review findings."""
+class TestErrorSurfaces:
+    """Exception mapping, datetime normalisation, and command retry safety."""
 
     async def test_force_change_password_maps_to_typed_error(self, auth):
         from pycognito.exceptions import ForceChangePasswordException

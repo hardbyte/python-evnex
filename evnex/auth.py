@@ -1,6 +1,13 @@
-"""Async, persistence-aware authentication for the EVNEX Cloud API.
+"""Authentication and session lifecycle for the EVNEX Cloud API.
 
-See docs/design/113-auth-refactor.md for the design rationale.
+EvnexAuth signs in, answers MFA challenges, refreshes expired sessions, and
+notifies the application whenever new tokens are issued so they can be
+persisted. The Evnex client uses it to authenticate every request and to
+recover transparently when the API rejects a token.
+
+The underlying identity provider client (pycognito/boto3) is synchronous,
+and no maintained async equivalent exists, so those calls run in worker
+threads via asyncio.to_thread — nothing here blocks the event loop.
 """
 
 from __future__ import annotations
@@ -129,12 +136,14 @@ class AuthChallenge:
 
 
 class EvnexAuth:
-    """Owns the Cognito session lifecycle for the EVNEX API.
+    """Manages sign-in, MFA, and session renewal for an EVNEX account.
 
-    Holds no username or password: interactive credentials are arguments to
-    start_authentication() only. Resume a session by passing tokens (a
-    refresh token alone is enough). Every newly issued token set is passed
-    to on_token_update before any request proceeds with it.
+    Sign in interactively with start_authentication() (answering any
+    AuthChallenge via respond_to_challenge()), or resume a previous session
+    by passing tokens — a refresh token alone is enough. Expired sessions
+    renew automatically; provide on_token_update to persist each newly
+    issued token set, and it will have completed before any request uses
+    the new tokens. Credentials themselves are never stored.
     """
 
     def __init__(
@@ -147,6 +156,13 @@ class EvnexAuth:
         self._config = config or EvnexConfig()
         self._tokens = tokens
         self._on_token_update = on_token_update
+        # Serialises every operation that talks to Cognito or replaces
+        # self._tokens: it makes refreshes single-flight, and it means the
+        # mutable Cognito instance below is only ever used by one worker
+        # thread at a time. It deliberately does NOT guard reads of
+        # self._tokens — get_access_token's fast path reads the current
+        # token set lock-free, which is safe because _store_tokens replaces
+        # it with a single reference assignment, only after persistence.
         self._lock = asyncio.Lock()
         # Built lazily inside a worker thread: boto3 client construction
         # performs blocking I/O (credential lookup)
@@ -321,7 +337,12 @@ class EvnexAuth:
             return tokens
 
     def _ensure_cognito(self) -> Cognito:
-        """Build the pycognito client on first use. Runs in a worker thread."""
+        """Build the pycognito client on first use.
+
+        Only call from a worker-thread closure with the lock held:
+        construction performs blocking I/O, and the returned instance is
+        mutable shared state.
+        """
         if self._cognito is None:
             self._cognito = Cognito(
                 user_pool_id=self._config.EVNEX_COGNITO_USER_POOL_ID,
@@ -341,19 +362,23 @@ class EvnexAuth:
         )
 
     async def _store_tokens(self, tokens: TokenSet) -> None:
-        """Persist, then publish, a new token set. Called with the lock held.
+        """Persist a newly issued token set, then make it the current one.
 
-        The callback runs before the tokens become visible to other tasks
-        (including get_access_token's unlocked fast path), so a token set can
-        never be used for a request before the application has persisted it.
+        Ordering matters: on_token_update completes before the assignment
+        that makes the tokens visible to other tasks (including
+        get_access_token's lock-free fast path), so a token set can never be
+        used for a request before the application has persisted it.
+
+        The callback's failures are logged and swallowed on purpose: the
+        tokens are valid regardless, and a broken store must not take API
+        access down with it. The application can always re-read .tokens.
         """
+        assert self._lock.locked(), "_store_tokens requires the lock"
         if self._on_token_update is not None:
             try:
                 await self._on_token_update(tokens)
             except Exception:
-                # A failing token store must not break API access; the
-                # application can reconcile from .tokens at any time
-                logger.exception("Token update callback failed")
+                logger.exception("on_token_update callback failed")
         self._tokens = tokens
 
 

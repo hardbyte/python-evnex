@@ -1,9 +1,8 @@
 import asyncio
 import logging
+import os
 
 from httpx import HTTPStatusError
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings
 
 from evnex.api import Evnex
 from evnex.auth import EvnexAuth
@@ -11,16 +10,10 @@ from evnex.auth import EvnexAuth
 logging.basicConfig(level=logging.WARNING)
 
 
-class EvnexAuthDetails(BaseSettings):
-    EVNEX_CLIENT_USERNAME: str
-    EVNEX_CLIENT_PASSWORD: SecretStr
-
-
 async def main():
-    creds = EvnexAuthDetails()
     auth = EvnexAuth()
     await auth.start_authentication(
-        creds.EVNEX_CLIENT_USERNAME, creds.EVNEX_CLIENT_PASSWORD.get_secret_value()
+        os.environ["EVNEX_CLIENT_USERNAME"], os.environ["EVNEX_CLIENT_PASSWORD"]
     )
     evnex = Evnex(auth=auth)
 

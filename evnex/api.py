@@ -15,7 +15,7 @@ from tenacity import (
 
 from evnex.auth import EvnexAuth, EvnexHttpxAuth
 from evnex.config import EvnexConfig
-from evnex.errors import NotAuthorizedException, ReauthenticationRequiredError
+from evnex.errors import EvnexAuthError, ReauthenticationRequiredError
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
@@ -58,7 +58,7 @@ except PackageNotFoundError:
 
 NON_RETRYABLE_EXCEPTIONS = (
     ValidationError,
-    NotAuthorizedException,
+    EvnexAuthError,
 )
 
 
@@ -95,13 +95,13 @@ class Evnex:
         :param httpx_client: optionally share an httpx AsyncClient
         :param config: override API endpoints or the default org
         """
-        logger.debug("Creating evnex api instance")
         self.httpx_client = httpx_client or AsyncClient()
         if config is None:
             config = EvnexConfig()
         self.auth = auth
         self.org_id = config.EVNEX_ORG_ID
         self.version = EVNEX_VERSION
+        self._base_url = config.EVNEX_BASE_URL.rstrip("/")
         self._httpx_auth = EvnexHttpxAuth(auth)
 
     @property
@@ -113,11 +113,11 @@ class Evnex:
             "User-Agent": f"python-evnex/{self.version}",
         }
 
-    async def _request(self, method: str, url: str, **kwargs) -> Response:
-        """Single request path: header injection, auth, and 401 recovery."""
+    async def _request(self, method: str, path: str, **kwargs) -> Response:
+        """Single request path: base URL, headers, auth, and 401 recovery."""
         return await self.httpx_client.request(
             method,
-            url,
+            f"{self._base_url}{path}",
             headers=self._common_headers,
             auth=self._httpx_auth,
             **kwargs,
@@ -127,7 +127,7 @@ class Evnex:
     async def get_user_detail(self) -> EvnexUserDetail:
         response = await self._request(
             "GET",
-            "https://client-api.evnex.io/v2/apps/user",
+            "/v2/apps/user",
         )
         response_json = await self._check_api_response(response)
         data = EvnexGetUserResponse.model_validate(response_json).data
@@ -168,10 +168,9 @@ class Evnex:
     ) -> list[EvnexChargePoint]:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Listing org charge points")
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points",
+            f"/v2/apps/organisations/{org_id}/charge-points",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointsResponse.model_validate(json_data).data.items
@@ -182,10 +181,9 @@ class Evnex:
     ) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Getting org insight")
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/organisations/{org_id}/summary/insights",
+            f"/organisations/{org_id}/summary/insights",
             params={"days": days, "tz-offset": tz_offset},
         )
         json_data = await self._check_api_response(r)
@@ -199,10 +197,9 @@ class Evnex:
     ) -> EvnexOrgSummaryStatus:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Getting org summary status")
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/status",
+            f"/v2/apps/organisations/{org_id}/summary/status",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetOrgSummaryStatusResponse.model_validate(json_data).data
@@ -218,7 +215,7 @@ class Evnex:
         )
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}",
+            f"/v2/apps/charge-points/{charge_point_id}",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointDetailResponse.model_validate(json_data).data
@@ -229,10 +226,7 @@ class Evnex:
     ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}",
-        )
-        logger.debug(
-            f"Raw get charge point detail response.\n{r.status_code}\n{r.text}"
+            f"/charge-points/{charge_point_id}",
         )
         json_data = await self._check_api_response(r)
 
@@ -248,7 +242,7 @@ class Evnex:
         """
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-solar",
+            f"/charge-points/{charge_point_id}/commands/get-solar",
         )
         json_data = await self._check_api_response(r)
 
@@ -265,7 +259,7 @@ class Evnex:
         """
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-override",
+            f"/charge-points/{charge_point_id}/commands/get-override",
             timeout=15,
         )
         json_data = await self._check_api_response(r)
@@ -277,7 +271,7 @@ class Evnex:
     ):
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/set-override",
+            f"/charge-points/{charge_point_id}/commands/set-override",
             json={"connectorId": connector_id, "chargeNow": charge_now},
         )
         self._ensure_success(r)
@@ -293,7 +287,7 @@ class Evnex:
         """
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-status",
+            f"/charge-points/{charge_point_id}/commands/get-status",
         )
         json_data = await self._check_api_response(r)
 
@@ -309,7 +303,7 @@ class Evnex:
         """
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
+            f"/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
         )
         json_data = await self._check_api_response(r)
 
@@ -324,11 +318,10 @@ class Evnex:
             DeprecationWarning,
             stacklevel=2,
         )
-        # Similar to f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions',
 
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/transactions",
+            f"/v2/apps/charge-points/{charge_point_id}/transactions",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointTransactionsResponse.model_validate(
@@ -341,7 +334,7 @@ class Evnex:
     ) -> list[EvnexChargePointSession]:
         r = await self._request(
             "GET",
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/sessions",
+            f"/charge-points/{charge_point_id}/sessions",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
@@ -370,7 +363,7 @@ class Evnex:
         logger.info("Stopping charging session")
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/remote-stop-transaction",
+            f"/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/remote-stop-transaction",
             # 'Connection': 'Keep-Alive'
             json={"connectorId": connector_id},
             timeout=timeout,
@@ -420,7 +413,7 @@ class Evnex:
         logger.info(f"Changing connector {connector_id} to {availability}")
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/change-availability",
+            f"/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/change-availability",
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
@@ -449,7 +442,7 @@ class Evnex:
         logger.info(f"Changing connector {connector_id} to {availability}")
         r = await self._request(
             "POST",
-            f"https://client-api.evnex.io/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/unlock-connector",
+            f"/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/unlock-connector",
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
@@ -481,7 +474,7 @@ class Evnex:
 
         r = await self._request(
             "PUT",
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/load-management",
+            f"/v2/apps/charge-points/{charge_point_id}/load-management",
             json={
                 "chargingProfilePeriods": schedule,
                 "enabled": enabled,
@@ -522,7 +515,7 @@ class Evnex:
 
         r = await self._request(
             "PUT",
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/charge-schedule",
+            f"/v2/apps/charge-points/{charge_point_id}/charge-schedule",
             json={
                 "chargingProfilePeriods": schedule,
                 "enabled": enabled,

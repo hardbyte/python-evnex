@@ -5,21 +5,10 @@ Example: sign in (with MFA if enabled) and print the session tokens.
 
 import asyncio
 import logging
-
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
 
 from evnex.api import Evnex
 from evnex.auth import AuthChallenge, EvnexAuth, TokenSet
-
-
-class EvnexAuthDetails(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="EVNEX_")
-
-    CLIENT_USERNAME: str
-    CLIENT_PASSWORD: SecretStr
-    ACCESS_TOKEN: str | None = None
-    REFRESH_TOKEN: str | None = None
 
 
 async def save_tokens(tokens: TokenSet) -> None:
@@ -28,20 +17,18 @@ async def save_tokens(tokens: TokenSet) -> None:
 
 
 async def main():
-    creds = EvnexAuthDetails()
-
     tokens = None
-    if creds.ACCESS_TOKEN or creds.REFRESH_TOKEN:
+    if os.environ.get("EVNEX_ACCESS_TOKEN") or os.environ.get("EVNEX_REFRESH_TOKEN"):
         tokens = TokenSet(
-            access_token=creds.ACCESS_TOKEN or "",
-            refresh_token=creds.REFRESH_TOKEN,
+            access_token=os.environ.get("EVNEX_ACCESS_TOKEN"),
+            refresh_token=os.environ.get("EVNEX_REFRESH_TOKEN"),
         )
 
     auth = EvnexAuth(tokens=tokens, on_token_update=save_tokens)
 
     if tokens is None:
         result = await auth.start_authentication(
-            creds.CLIENT_USERNAME, creds.CLIENT_PASSWORD.get_secret_value()
+            os.environ["EVNEX_CLIENT_USERNAME"], os.environ["EVNEX_CLIENT_PASSWORD"]
         )
         while isinstance(result, AuthChallenge):
             code = input(f"Enter the code for challenge {result.name}: ")
