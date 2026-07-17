@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import quote
 
 import botocore.exceptions
 import httpx
@@ -133,6 +134,26 @@ class AuthChallenge:
             username=data["username"],
             parameters=dict(data.get("parameters") or {}),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TotpEnrollment:
+    """A pending TOTP device enrollment: load the secret, then confirm."""
+
+    secret: str = field(repr=False)
+
+    def provisioning_uri(self, account_name: str, issuer: str = "EVNEX") -> str:
+        """An otpauth:// URI suitable for rendering as a QR code."""
+        label = quote(f"{issuer}:{account_name}")
+        return f"otpauth://totp/{label}?secret={self.secret}&issuer={quote(issuer)}"
+
+
+@dataclass(frozen=True, slots=True)
+class MfaStatus:
+    """The MFA methods currently enabled for an account."""
+
+    enabled: tuple[str, ...]
+    preferred: str | None = None
 
 
 class EvnexAuth:
@@ -335,6 +356,105 @@ class EvnexAuth:
                 raise ReauthenticationRequiredError(str(err)) from err
             await self._store_tokens(tokens)
             return tokens
+
+    async def get_mfa_status(self) -> MfaStatus:
+        """Report which MFA methods are enabled for the signed-in account."""
+        access_token = await self.get_access_token()
+
+        def _get_user() -> MfaStatus:
+            cognito = self._ensure_cognito()
+            response = cognito.client.get_user(AccessToken=access_token)
+            return MfaStatus(
+                enabled=tuple(response.get("UserMFASettingList") or ()),
+                preferred=response.get("PreferredMfaSetting"),
+            )
+
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(_get_user)
+            except botocore.exceptions.ClientError as err:
+                raise EvnexAuthError(_error_message(err)) from err
+
+    async def begin_totp_enrollment(self) -> TotpEnrollment:
+        """Start enrolling a (new) TOTP authenticator device.
+
+        Returns the shared secret to load into the authenticator — via QR
+        code (see TotpEnrollment.provisioning_uri) or manual entry — then
+        confirm with confirm_totp_enrollment(). Completing enrollment
+        replaces any previously registered TOTP device.
+        """
+        access_token = await self.get_access_token()
+
+        def _associate() -> TotpEnrollment:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            return TotpEnrollment(secret=cognito.associate_software_token())
+
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(_associate)
+            except botocore.exceptions.ClientError as err:
+                raise EvnexAuthError(_error_message(err)) from err
+
+    async def confirm_totp_enrollment(self, code: str, device_name: str = "") -> None:
+        """Verify a code from the newly enrolled authenticator device.
+
+        Note this registers the device but does not turn MFA on for the
+        account; call set_mfa_preference(totp=True) as well when first
+        enabling MFA.
+
+        :raises InvalidChallengeResponseError: the code was rejected
+        """
+        access_token = await self.get_access_token()
+
+        def _verify() -> bool:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            return bool(cognito.verify_software_token(code.strip(), device_name))
+
+        async with self._lock:
+            try:
+                verified = await asyncio.to_thread(_verify)
+            except botocore.exceptions.ClientError as err:
+                code_name = err.response.get("Error", {}).get("Code", "")
+                if code_name in (
+                    "CodeMismatchException",
+                    "EnableSoftwareTokenMFAException",
+                ):
+                    raise InvalidChallengeResponseError(_error_message(err)) from err
+                raise EvnexAuthError(_error_message(err)) from err
+        if not verified:
+            raise InvalidChallengeResponseError("The code was not accepted")
+
+    async def set_mfa_preference(
+        self,
+        *,
+        totp: bool = False,
+        sms: bool = False,
+        preferred: str | None = None,
+    ) -> None:
+        """Enable, disable, or reprioritise MFA methods for the account.
+
+        With both flags False, MFA is disabled entirely (where the user
+        pool allows it). preferred is "SMS" or "SOFTWARE_TOKEN"; it may be
+        omitted when only one method is enabled.
+        """
+        if preferred is None and (totp ^ sms):
+            preferred = "SOFTWARE_TOKEN" if totp else "SMS"
+        access_token = await self.get_access_token()
+
+        def _set_preference() -> None:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            cognito.set_user_mfa_preference(
+                sms_mfa=sms, software_token_mfa=totp, preferred=preferred
+            )
+
+        async with self._lock:
+            try:
+                await asyncio.to_thread(_set_preference)
+            except botocore.exceptions.ClientError as err:
+                raise EvnexAuthError(_error_message(err)) from err
 
     def _ensure_cognito(self) -> Cognito:
         """Build the pycognito client on first use.

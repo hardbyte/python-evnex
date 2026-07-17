@@ -45,6 +45,21 @@ class FakeCognito:
         self.respond_to_sms_mfa_challenge = MagicMock(
             side_effect=lambda code, mfa_tokens=None: self._issue_tokens()
         )
+        self.associate_software_token = MagicMock(
+            side_effect=self._block, return_value="FAKESECRETBASE32"
+        )
+        self.verify_software_token = MagicMock(
+            side_effect=self._block, return_value=True
+        )
+        self.set_user_mfa_preference = MagicMock(side_effect=self._block)
+        self.client = MagicMock()
+        self.client.get_user = MagicMock(
+            side_effect=self._block,
+            return_value={
+                "UserMFASettingList": ["SOFTWARE_TOKEN_MFA"],
+                "PreferredMfaSetting": "SOFTWARE_TOKEN_MFA",
+            },
+        )
 
     @staticmethod
     def _block(*args, **kwargs):

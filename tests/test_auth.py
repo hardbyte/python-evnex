@@ -453,3 +453,50 @@ class TestErrorSurfaces:
             username="user@example.com",
         )
         assert "user@example.com" not in repr(challenge)
+
+
+class TestMfaManagement:
+    async def test_mfa_status(self, resumed_auth):
+        status = await resumed_auth.get_mfa_status()
+
+        assert status.enabled == ("SOFTWARE_TOKEN_MFA",)
+        assert status.preferred == "SOFTWARE_TOKEN_MFA"
+
+    async def test_totp_enrollment_flow(self, resumed_auth):
+        enrollment = await resumed_auth.begin_totp_enrollment()
+
+        assert enrollment.secret == "FAKESECRETBASE32"
+        uri = enrollment.provisioning_uri("user@example.com")
+        assert uri.startswith("otpauth://totp/EVNEX%3Auser%40example.com?")
+        assert "secret=FAKESECRETBASE32" in uri
+        assert "secret" not in repr(enrollment).lower() or "FAKESECRET" not in repr(
+            enrollment
+        )
+
+        await resumed_auth.confirm_totp_enrollment("123456", "New phone")
+        resumed_auth._cognito.verify_software_token.assert_called_once_with(
+            "123456", "New phone"
+        )
+
+    async def test_confirm_with_wrong_code(self, resumed_auth):
+        await resumed_auth.begin_totp_enrollment()  # builds the fake cognito
+        resumed_auth._cognito.verify_software_token.side_effect = client_error(
+            "EnableSoftwareTokenMFAException", "Code mismatch"
+        )
+
+        with pytest.raises(InvalidChallengeResponseError):
+            await resumed_auth.confirm_totp_enrollment("000000")
+
+    async def test_disable_mfa(self, resumed_auth):
+        await resumed_auth.set_mfa_preference(totp=False, sms=False)
+
+        resumed_auth._cognito.set_user_mfa_preference.assert_called_once_with(
+            sms_mfa=False, software_token_mfa=False, preferred=None
+        )
+
+    async def test_single_method_is_preferred_automatically(self, resumed_auth):
+        await resumed_auth.set_mfa_preference(totp=True)
+
+        resumed_auth._cognito.set_user_mfa_preference.assert_called_once_with(
+            sms_mfa=False, software_token_mfa=True, preferred="SOFTWARE_TOKEN"
+        )

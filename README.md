@@ -104,6 +104,25 @@ once, transparently. When the session truly can't be renewed, calls raise
 
 See `examples/get_token.py` for a complete sign-in and persistence flow.
 
+### Managing MFA devices
+
+The EVNEX app doesn't currently expose changing or removing your MFA device;
+the API does, and `EvnexAuth` wraps it (requires a signed-in session):
+
+```python
+status = await auth.get_mfa_status()          # which methods are enabled
+
+enrollment = await auth.begin_totp_enrollment()
+print(enrollment.provisioning_uri("you@example.com"))  # render as QR code
+await auth.confirm_totp_enrollment(code, device_name="New phone")
+await auth.set_mfa_preference(totp=True)      # turn TOTP on / make preferred
+
+await auth.set_mfa_preference()               # disable MFA entirely
+```
+
+Completing a new TOTP enrollment replaces the previously registered
+authenticator device.
+
 ## Examples
 
 `python-evnex` is intended as a library, but a few example scripts are provided in the `examples` folder.
