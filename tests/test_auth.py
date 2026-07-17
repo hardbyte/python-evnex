@@ -501,3 +501,70 @@ class TestMfaManagement:
         resumed_auth._cognito.set_user_mfa_preference.assert_called_once_with(
             sms_mfa=False, software_token_mfa=True, preferred="SOFTWARE_TOKEN"
         )
+
+
+class TestPasswordManagement:
+    async def test_change_password(self, resumed_auth):
+        await resumed_auth.change_password("oldpass", "newpass")
+
+        resumed_auth._cognito.change_password.assert_called_once_with(
+            "oldpass", "newpass"
+        )
+
+    async def test_change_password_wrong_current(self, resumed_auth):
+        await resumed_auth.change_password("oldpass", "newpass")  # builds the fake
+        resumed_auth._cognito.change_password.side_effect = client_error(
+            "NotAuthorizedException", "Incorrect username or password."
+        )
+
+        with pytest.raises(InvalidCredentialsError):
+            await resumed_auth.change_password("wrongpass", "newpass")
+
+    async def test_change_password_invalid_new(self, resumed_auth):
+        await resumed_auth.change_password("oldpass", "newpass")  # builds the fake
+        resumed_auth._cognito.change_password.side_effect = client_error(
+            "InvalidPasswordException", "Password does not conform to policy"
+        )
+
+        with pytest.raises(EvnexAuthError, match="conform"):
+            await resumed_auth.change_password("oldpass", "weak")
+
+    async def test_start_password_reset_returns_destination(self, auth):
+        destination = await auth.start_password_reset("user@example.com")
+
+        assert destination == "b***@e***"
+        auth._cognito.client.forgot_password.assert_called_once()
+
+    async def test_confirm_password_reset(self, auth):
+        await auth.confirm_password_reset("user@example.com", "123456", "newpass")
+
+        auth._cognito.confirm_forgot_password.assert_called_once_with(
+            "123456", "newpass"
+        )
+
+    async def test_confirm_password_reset_wrong_code(self, auth):
+        await auth.start_password_reset("user@example.com")  # builds the fake
+        auth._cognito.confirm_forgot_password.side_effect = client_error(
+            "CodeMismatchException", "Invalid verification code provided"
+        )
+
+        with pytest.raises(InvalidChallengeResponseError):
+            await auth.confirm_password_reset("user@example.com", "000000", "newpass")
+
+    async def test_confirm_password_reset_expired_code(self, auth):
+        await auth.start_password_reset("user@example.com")  # builds the fake
+        auth._cognito.confirm_forgot_password.side_effect = client_error(
+            "ExpiredCodeException", "Invalid code provided, please request a code again"
+        )
+
+        with pytest.raises(ChallengeExpiredError):
+            await auth.confirm_password_reset("user@example.com", "123456", "newpass")
+
+    async def test_confirm_password_reset_invalid_new(self, auth):
+        await auth.start_password_reset("user@example.com")  # builds the fake
+        auth._cognito.confirm_forgot_password.side_effect = client_error(
+            "InvalidPasswordException", "Password does not conform to policy"
+        )
+
+        with pytest.raises(EvnexAuthError, match="conform"):
+            await auth.confirm_password_reset("user@example.com", "123456", "weak")

@@ -461,6 +461,90 @@ class EvnexAuth:
             except botocore.exceptions.ClientError as err:
                 raise EvnexAuthError(_error_message(err)) from err
 
+    async def change_password(self, current_password: str, new_password: str) -> None:
+        """Change the password of the signed-in account.
+
+        Requires a usable session.
+
+        :raises InvalidCredentialsError: the current password was wrong
+        :raises EvnexAuthError: the new password was rejected, or a rate
+            limit was hit
+        """
+        # Resolve the access token before taking the lock: get_access_token
+        # may itself acquire self._lock, so locking first would deadlock.
+        access_token = await self.get_access_token()
+
+        def _change() -> None:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            cognito.change_password(current_password, new_password)
+
+        async with self._lock:
+            try:
+                await asyncio.to_thread(_change)
+            except botocore.exceptions.ClientError as err:
+                code = err.response.get("Error", {}).get("Code", "")
+                if code == "NotAuthorizedException":
+                    raise InvalidCredentialsError(_error_message(err)) from err
+                raise EvnexAuthError(_error_message(err)) from err
+
+    async def start_password_reset(self, username: str) -> str:
+        """Begin the forgot-password flow, sending a reset code to the user.
+
+        Needs no session. Returns a human-readable description of where the
+        code was delivered (e.g. a masked email address), or "" if the
+        server did not report a destination. Complete the reset with
+        confirm_password_reset().
+
+        :raises EvnexAuthError: the request was rejected (e.g. a rate limit)
+        """
+
+        def _start() -> str:
+            cognito = self._ensure_cognito()
+            cognito.username = username
+            # pycognito's initiate_forgot_password discards the boto3
+            # response, so call forgot_password directly to read the
+            # delivery details. This client has no secret, so no SECRET_HASH
+            # is required.
+            response = cognito.client.forgot_password(
+                ClientId=self._config.EVNEX_COGNITO_CLIENT_ID,
+                Username=username,
+            )
+            delivery = response.get("CodeDeliveryDetails") or {}
+            return str(delivery.get("Destination") or "")
+
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(_start)
+            except botocore.exceptions.ClientError as err:
+                raise EvnexAuthError(_error_message(err)) from err
+
+    async def confirm_password_reset(
+        self, username: str, code: str, new_password: str
+    ) -> None:
+        """Complete the forgot-password flow with the emailed/texted code.
+
+        :raises InvalidChallengeResponseError: the reset code was wrong
+        :raises ChallengeExpiredError: the reset code expired
+        :raises EvnexAuthError: the new password was rejected
+        """
+
+        def _confirm() -> None:
+            cognito = self._ensure_cognito()
+            cognito.username = username
+            cognito.confirm_forgot_password(code.strip(), new_password)
+
+        async with self._lock:
+            try:
+                await asyncio.to_thread(_confirm)
+            except botocore.exceptions.ClientError as err:
+                code_name = err.response.get("Error", {}).get("Code", "")
+                if code_name == "CodeMismatchException":
+                    raise InvalidChallengeResponseError(_error_message(err)) from err
+                if code_name == "ExpiredCodeException":
+                    raise ChallengeExpiredError(_error_message(err)) from err
+                raise EvnexAuthError(_error_message(err)) from err
+
     def _ensure_cognito(self) -> Cognito:
         """Build the pycognito client on first use.
 

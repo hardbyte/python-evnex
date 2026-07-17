@@ -52,6 +52,9 @@ class FakeCognito:
             side_effect=self._block, return_value=True
         )
         self.set_user_mfa_preference = MagicMock(side_effect=self._block)
+        self.change_password = MagicMock(side_effect=self._block)
+        self.initiate_forgot_password = MagicMock(side_effect=self._block)
+        self.confirm_forgot_password = MagicMock(side_effect=self._block)
         self.client = MagicMock()
         self.client.get_user = MagicMock(
             side_effect=self._block,
@@ -59,6 +62,10 @@ class FakeCognito:
                 "UserMFASettingList": ["SOFTWARE_TOKEN_MFA"],
                 "PreferredMfaSetting": "SOFTWARE_TOKEN_MFA",
             },
+        )
+        self.client.forgot_password = MagicMock(
+            side_effect=self._block,
+            return_value={"CodeDeliveryDetails": {"Destination": "b***@e***"}},
         )
 
     @staticmethod

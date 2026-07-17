@@ -123,6 +123,23 @@ await auth.set_mfa_preference()               # disable MFA entirely
 Completing a new TOTP enrollment replaces the previously registered
 authenticator device.
 
+### Changing or resetting your password
+
+`EvnexAuth` also wraps Cognito's password operations:
+
+```python
+# Change the password of a signed-in account:
+await auth.change_password(current_password, new_password)
+
+# Reset a forgotten password (no session needed):
+destination = await auth.start_password_reset("you@example.com")  # masked email
+await auth.confirm_password_reset("you@example.com", emailed_code, new_password)
+```
+
+The CLI equivalents are `evnex auth change-password` (prompts for the current
+and new password) and `evnex auth reset-password` (sends a code to your email,
+then prompts for the code and a new password).
+
 ## Command line
 
 Everything above is also available as a CLI, runnable directly with
@@ -132,24 +149,36 @@ Everything above is also available as a CLI, runnable directly with
 export EVNEX_CLIENT_USERNAME=you@example.com
 export EVNEX_CLIENT_PASSWORD=<your password>
 
-uvx evnex auth status                # which MFA methods are enabled
-uvx evnex auth enroll-totp           # start enrolling a (new) TOTP device
-uvx evnex auth confirm-totp 123456 --device-name "My phone"
-uvx evnex auth disable               # turn MFA off entirely
+uvx evnex auth login                 # sign in (uses cached tokens when valid)
+uvx evnex auth status                # signed-in user, session, and MFA state
+uvx evnex auth logout                # forget the cached session
+uvx evnex auth mfa enable            # enrol a TOTP device and turn MFA on
+uvx evnex auth mfa disable           # turn MFA off entirely
+uvx evnex auth change-password       # change your password (prompts)
+uvx evnex auth reset-password        # reset a forgotten password via email
 ```
 
-`enroll-totp` prints an `otpauth://` URI you can paste straight into a
-password manager's one-time password field. For a scannable QR code (in the
-terminal, or the browser with `--browser`), include the optional qrcode
-dependency: `uvx --with qrcode evnex auth enroll-totp`.
+`evnex auth status` shows who you are signed in as (decoded from the cached
+token), when the session expires, and which MFA methods are enabled.
 
-Session tokens are cached (mode 0600, `~/.cache/evnex/tokens.json` by
-default) so an MFA sign-in is only needed occasionally. To answer sign-in
-challenges from a password manager instead of typing codes — for example
-with the [1Password CLI](https://developer.1password.com/docs/cli/) v2+:
+`evnex auth mfa enable` is the interactive one-shot: it prints an `otpauth://`
+URI (paste it straight into a password manager's one-time password field),
+the bare secret, and a QR code, then asks for a code from the new device and
+makes TOTP the preferred method. For automation, the same flow is split into
+`evnex auth mfa enroll` (print the URI/secret/QR and exit) and
+`evnex auth mfa confirm CODE` (verify and enable; `--no-prefer` registers the
+device without changing the MFA preference). For a scannable QR code (in the
+terminal, or the browser with `--browser`), include the optional qrcode
+dependency: `uvx --with qrcode evnex auth mfa enable`.
+
+Session tokens are cached (mode 0600, `~/.cache/evnex/tokens.json` by default,
+or `EVNEX_TOKEN_CACHE`) so an MFA sign-in is only needed occasionally. To
+answer sign-in challenges from a password manager instead of typing codes —
+for example with the [1Password CLI](https://developer.1password.com/docs/cli/)
+v2+:
 
 ```shell
-uvx evnex auth --code-command 'op item get Evnex --otp' signin
+uvx evnex auth login --otp-command 'op item get Evnex --otp'
 ```
 
 ## Examples

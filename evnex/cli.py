@@ -2,10 +2,11 @@
 
 Run without installing anything via uv:
 
+    uvx evnex auth login
     uvx evnex auth status
-    uvx evnex auth enroll-totp
-    uvx evnex auth confirm-totp CODE --device-name NAME
-    uvx evnex auth disable
+    uvx evnex auth mfa enable
+    uvx evnex auth change-password
+    uvx evnex auth reset-password
 
 Credentials come from EVNEX_CLIENT_USERNAME / EVNEX_CLIENT_PASSWORD (or are
 prompted for). Session tokens are cached with 0600 permissions so an MFA
@@ -22,7 +23,10 @@ import os
 import sys
 import tempfile
 import webbrowser
+from importlib.metadata import version
 from pathlib import Path
+
+import jwt
 
 from evnex.auth import AuthChallenge, EvnexAuth, TokenSet
 from evnex.errors import EvnexAuthError, ReauthenticationRequiredError
@@ -32,6 +36,11 @@ DEFAULT_CACHE = (
     / "evnex"
     / "tokens.json"
 )
+
+
+def _default_cache() -> Path:
+    override = os.environ.get("EVNEX_TOKEN_CACHE")
+    return Path(override) if override else DEFAULT_CACHE
 
 
 def _save_tokens_factory(cache: Path):
@@ -53,15 +62,15 @@ def _load_tokens(cache: Path) -> TokenSet | None:
 
 
 async def _challenge_code(args: argparse.Namespace, challenge: AuthChallenge) -> str:
-    if args.code:
-        code, args.code = args.code, None  # a code is single-use
+    if args.otp:
+        code, args.otp = args.otp, None  # a code is single-use
         return str(code)
-    if args.code_command:
+    if args.otp_command:
         proc = await asyncio.create_subprocess_shell(
-            args.code_command, stdout=asyncio.subprocess.PIPE
+            args.otp_command, stdout=asyncio.subprocess.PIPE
         )
         stdout, _ = await proc.communicate()
-        print("Code obtained from --code-command", file=sys.stderr)
+        print("Code obtained from --otp-command", file=sys.stderr)
         return stdout.decode().strip()
     return input(f"Enter the 6-digit code ({challenge.name}): ")
 
@@ -116,42 +125,97 @@ def show_qr(uri: str, open_browser: bool) -> None:
         print(f"QR code opened in browser ({f.name})", file=sys.stderr)
 
 
+def _enrollment_account() -> str:
+    return os.environ.get("EVNEX_CLIENT_USERNAME", "evnex-account")
+
+
+async def cmd_login(args: argparse.Namespace) -> None:
+    await signed_in_auth(args)
+
+
+async def cmd_logout(args: argparse.Namespace) -> None:
+    cache: Path = args.token_cache
+    if cache.is_file():
+        cache.unlink()
+        print(f"Removed cached session at {cache}")
+    else:
+        print("No cached session")
+
+
 async def cmd_status(args: argparse.Namespace) -> None:
     auth = await signed_in_auth(args)
+    tokens = auth.tokens
+    identity = "unknown"
+    if tokens is not None and tokens.id_token:
+        try:
+            claims = jwt.decode(tokens.id_token, options={"verify_signature": False})
+            identity = claims.get("email") or claims.get("cognito:username") or identity
+        except jwt.DecodeError:
+            pass
+    print(f"Signed in as: {identity}")
+    if tokens is not None and tokens.expires_at is not None:
+        print(f"Access token expires: {tokens.expires_at.isoformat()}")
+    print(f"Token cache: {args.token_cache}")
+
     status = await auth.get_mfa_status()
     if not status.enabled:
         print("MFA: disabled")
         return
+    print("MFA methods:")
     for method in status.enabled:
         marker = " (preferred)" if method == status.preferred else ""
-        print(f"MFA enabled: {method}{marker}")
+        print(f"  {method}{marker}")
 
 
-async def cmd_enroll_totp(args: argparse.Namespace) -> None:
+async def cmd_change_password(args: argparse.Namespace) -> None:
+    auth = await signed_in_auth(args)
+    current = getpass.getpass("Current password: ")
+    new = getpass.getpass("New password: ")
+    confirm = getpass.getpass("Confirm new password: ")
+    if new != confirm:
+        print("New passwords did not match; aborted", file=sys.stderr)
+        return
+    await auth.change_password(current, new)
+    print("Password changed")
+
+
+async def cmd_reset_password(args: argparse.Namespace) -> None:
+    # The forgot-password flow needs no signed-in session.
+    auth = EvnexAuth()
+    username = os.environ.get("EVNEX_CLIENT_USERNAME") or input("EVNEX username: ")
+    destination = await auth.start_password_reset(username)
+    if destination:
+        print(f"A reset code was sent to {destination}")
+    else:
+        print("A reset code was sent; check your email")
+    code = input("Enter the reset code: ")
+    new = getpass.getpass("New password: ")
+    confirm = getpass.getpass("Confirm new password: ")
+    if new != confirm:
+        print("New passwords did not match; aborted", file=sys.stderr)
+        return
+    await auth.confirm_password_reset(username, code, new)
+    print("Password reset; sign in again with the new password")
+
+
+async def cmd_mfa_enable(args: argparse.Namespace) -> None:
     auth = await signed_in_auth(args)
     enrollment = await auth.begin_totp_enrollment()
-    account = os.environ.get("EVNEX_CLIENT_USERNAME", "evnex-account")
-    uri = enrollment.provisioning_uri(account)
+    uri = enrollment.provisioning_uri(_enrollment_account())
 
     print("Scan the QR code with your authenticator app, or paste the")
     print("otpauth URI into a password manager's one-time password field:\n")
     print(f"  {uri}\n")
     print(f"(bare secret for manual entry: {enrollment.secret})\n")
     show_qr(uri, open_browser=args.browser)
-    print("\nThen run: evnex auth confirm-totp CODE [--device-name NAME]")
+
+    code = input("Enter a code from the new device: ")
+    await auth.confirm_totp_enrollment(code, args.device_name)
+    await auth.set_mfa_preference(totp=True)
+    print("TOTP device registered and set as the preferred MFA method")
 
 
-async def cmd_confirm_totp(args: argparse.Namespace) -> None:
-    auth = await signed_in_auth(args)
-    await auth.confirm_totp_enrollment(args.totp_code, args.device_name)
-    if args.enable:
-        await auth.set_mfa_preference(totp=True)
-        print("TOTP device registered and set as the preferred MFA method")
-    else:
-        print("TOTP device registered (MFA preference unchanged)")
-
-
-async def cmd_disable(args: argparse.Namespace) -> None:
+async def cmd_mfa_disable(args: argparse.Namespace) -> None:
     if not args.yes:
         answer = input("Disable MFA on this account? [y/N] ")
         if answer.strip().lower() not in ("y", "yes"):
@@ -162,8 +226,27 @@ async def cmd_disable(args: argparse.Namespace) -> None:
     print("MFA disabled")
 
 
-async def cmd_signin(args: argparse.Namespace) -> None:
-    await signed_in_auth(args)
+async def cmd_mfa_enroll(args: argparse.Namespace) -> None:
+    auth = await signed_in_auth(args)
+    enrollment = await auth.begin_totp_enrollment()
+    uri = enrollment.provisioning_uri(_enrollment_account())
+
+    print("Scan the QR code with your authenticator app, or paste the")
+    print("otpauth URI into a password manager's one-time password field:\n")
+    print(f"  {uri}\n")
+    print(f"(bare secret for manual entry: {enrollment.secret})\n")
+    show_qr(uri, open_browser=args.browser)
+    print("\nThen run: evnex auth mfa confirm CODE [--device-name NAME]")
+
+
+async def cmd_mfa_confirm(args: argparse.Namespace) -> None:
+    auth = await signed_in_auth(args)
+    await auth.confirm_totp_enrollment(args.totp_code, args.device_name)
+    if args.prefer:
+        await auth.set_mfa_preference(totp=True)
+        print("TOTP device registered and set as the preferred MFA method")
+    else:
+        print("TOTP device registered (MFA preference unchanged)")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -171,91 +254,176 @@ def build_parser() -> argparse.ArgumentParser:
         prog="evnex",
         description="Command line interface for the EVNEX Cloud API.",
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"evnex {version('evnex')}",
+    )
+    parser.set_defaults(handler=None, print_group_help=parser.print_help)
+
+    # Shared flags accepted in trailing position on every auth leaf command.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--token-cache",
+        type=Path,
+        default=_default_cache(),
+        help=f"where to cache session tokens (default: {_default_cache()})",
+    )
+    common.add_argument(
+        "--otp",
+        help="6-digit code to answer a sign-in MFA challenge non-interactively",
+    )
+    common.add_argument(
+        "--otp-command",
+        help="shell command printing a current MFA code, e.g. "
+        "'op item get Evnex --otp' with the 1Password CLI",
+    )
+
+    sub = parser.add_subparsers(dest="command")
 
     auth = sub.add_parser(
         "auth",
         help="manage authentication and MFA for your EVNEX account",
         description=(
-            "Sign in and manage MFA for your EVNEX account. Credentials come "
-            "from EVNEX_CLIENT_USERNAME / EVNEX_CLIENT_PASSWORD or prompts; "
-            "session tokens are cached so an MFA code is only needed once."
+            "Sign in and manage MFA and passwords for your EVNEX account. "
+            "Credentials come from EVNEX_CLIENT_USERNAME / EVNEX_CLIENT_PASSWORD "
+            "or prompts; session tokens are cached so an MFA code is only "
+            "needed once."
         ),
     )
-    auth.add_argument(
-        "--token-cache",
-        type=Path,
-        default=DEFAULT_CACHE,
-        help=f"where to cache session tokens (default: {DEFAULT_CACHE})",
-    )
-    auth.add_argument(
-        "--code",
-        help="6-digit code to answer a sign-in MFA challenge non-interactively",
-    )
-    auth.add_argument(
-        "--code-command",
-        help="shell command printing a current MFA code, e.g. "
-        "'op item get Evnex --otp' with the 1Password CLI",
-    )
-    auth_sub = auth.add_subparsers(dest="auth_command", required=True)
+    auth.set_defaults(print_group_help=auth.print_help)
+    auth_sub = auth.add_subparsers(dest="auth_command")
 
-    auth_sub.add_parser("status", help="show which MFA methods are enabled")
-    auth_sub.add_parser("signin", help="sign in and cache session tokens")
+    login = auth_sub.add_parser(
+        "login",
+        parents=[common],
+        help="sign in (using cached tokens when valid) and cache session tokens",
+    )
+    login.set_defaults(handler="login")
 
-    enroll = auth_sub.add_parser(
-        "enroll-totp",
-        help="enroll a new TOTP authenticator device",
+    logout = auth_sub.add_parser(
+        "logout",
+        parents=[common],
+        help="delete the cached session tokens",
+    )
+    logout.set_defaults(handler="logout")
+
+    status = auth_sub.add_parser(
+        "status",
+        parents=[common],
+        help="show the signed-in user, session, and enabled MFA methods",
+    )
+    status.set_defaults(handler="status")
+
+    change_password = auth_sub.add_parser(
+        "change-password",
+        parents=[common],
+        help="change the account password (prompts for current and new)",
+    )
+    change_password.set_defaults(handler="change-password")
+
+    reset_password = auth_sub.add_parser(
+        "reset-password",
+        parents=[common],
+        help="reset a forgotten password via an emailed code (no sign-in)",
+    )
+    reset_password.set_defaults(handler="reset-password")
+
+    mfa = auth_sub.add_parser(
+        "mfa",
+        help="manage multi-factor authentication devices",
+        description="Enable, disable, or (re)enroll TOTP multi-factor authentication.",
+    )
+    mfa.set_defaults(print_group_help=mfa.print_help)
+    mfa_sub = mfa.add_subparsers(dest="mfa_command")
+
+    enable = mfa_sub.add_parser(
+        "enable",
+        parents=[common],
+        help="enroll a new TOTP device and make it the preferred MFA method",
         description=(
-            "Start enrolling a TOTP device: prints the otpauth:// URI (paste "
-            "into a password manager's one-time password field) and a QR code. "
-            "Completing enrollment with confirm-totp replaces any previously "
-            "registered device."
+            "Interactive one-shot: prints the otpauth:// URI, bare secret, and "
+            "a QR code, prompts for a code from the new device, then registers "
+            "it and makes TOTP the preferred MFA method. Enrolling a new device "
+            "replaces any previously registered one."
+        ),
+    )
+    enable.add_argument("--device-name", default="", help="friendly device name")
+    enable.add_argument(
+        "--browser", action="store_true", help="also open the QR code in a browser"
+    )
+    enable.set_defaults(handler="mfa-enable")
+
+    disable = mfa_sub.add_parser(
+        "disable",
+        parents=[common],
+        help="turn MFA off for the account",
+        description="Disable all MFA methods for the account.",
+    )
+    disable.add_argument(
+        "--yes", "-y", action="store_true", help="skip the confirmation prompt"
+    )
+    disable.set_defaults(handler="mfa-disable")
+
+    enroll = mfa_sub.add_parser(
+        "enroll",
+        parents=[common],
+        help="print a TOTP enrollment URI/secret/QR and exit (for automation)",
+        description=(
+            "Plumbing command: start enrolling a TOTP device and print the "
+            "otpauth:// URI, bare secret, and QR code, then exit. Complete "
+            "enrollment with 'evnex auth mfa confirm CODE'."
         ),
     )
     enroll.add_argument(
         "--browser", action="store_true", help="also open the QR code in a browser"
     )
+    enroll.set_defaults(handler="mfa-enroll")
 
-    confirm = auth_sub.add_parser(
-        "confirm-totp",
-        help="verify the new TOTP device and enable it",
+    confirm = mfa_sub.add_parser(
+        "confirm",
+        parents=[common],
+        help="verify a code from a newly enrolled TOTP device (for automation)",
         description=(
-            "Verify a code generated by the newly enrolled device. By default "
-            "this also makes TOTP the preferred MFA method."
+            "Plumbing command: verify a code generated by the newly enrolled "
+            "device. By default this also makes TOTP the preferred MFA method."
         ),
     )
     confirm.add_argument("totp_code", help="6-digit code from the new device")
     confirm.add_argument("--device-name", default="", help="friendly device name")
     confirm.add_argument(
-        "--no-enable",
-        dest="enable",
+        "--no-prefer",
+        dest="prefer",
         action="store_false",
         help="register the device without changing the MFA preference",
     )
-
-    disable = auth_sub.add_parser(
-        "disable",
-        help="turn MFA off for the account",
-        description="Disable all MFA methods for the account.",
-    )
-    disable.add_argument("--yes", action="store_true", help="skip confirmation")
+    confirm.set_defaults(handler="mfa-confirm")
 
     return parser
 
 
 HANDLERS = {
+    "login": cmd_login,
+    "logout": cmd_logout,
     "status": cmd_status,
-    "signin": cmd_signin,
-    "enroll-totp": cmd_enroll_totp,
-    "confirm-totp": cmd_confirm_totp,
-    "disable": cmd_disable,
+    "change-password": cmd_change_password,
+    "reset-password": cmd_reset_password,
+    "mfa-enable": cmd_mfa_enable,
+    "mfa-disable": cmd_mfa_disable,
+    "mfa-enroll": cmd_mfa_enroll,
+    "mfa-confirm": cmd_mfa_confirm,
 }
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
+    handler = getattr(args, "handler", None)
+    if handler is None:
+        # No (leaf) subcommand: print the most specific help and exit cleanly.
+        args.print_group_help()
+        sys.exit(0)
     try:
-        asyncio.run(HANDLERS[args.auth_command](args))
+        asyncio.run(HANDLERS[handler](args))
     except EvnexAuthError as err:
         print(f"Authentication error: {err}", file=sys.stderr)
         sys.exit(1)
