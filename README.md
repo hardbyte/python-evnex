@@ -26,92 +26,83 @@ pip install evnex
 
 ## Usage
 
+`EvnexAuth` handles signing in and keeping the session alive; the `Evnex`
+client uses it to call the API. Credentials establish a session once and are
+never stored:
+
 ```python
 import asyncio
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+import os
+
 from evnex.api import Evnex
-
-
-class EvnexAuthDetails(BaseSettings):
-    EVNEX_CLIENT_USERNAME: str
-    EVNEX_CLIENT_PASSWORD: SecretStr
+from evnex.auth import EvnexAuth
 
 
 async def main():
-    creds = EvnexAuthDetails()
-    evnex = Evnex(username=creds.EVNEX_CLIENT_USERNAME,
-                  password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value())
+    auth = EvnexAuth()
+    await auth.start_authentication(
+        os.environ["EVNEX_CLIENT_USERNAME"],
+        os.environ["EVNEX_CLIENT_PASSWORD"],
+    )
+    evnex = Evnex(auth=auth)
 
-    user_data = await evnex.get_user_detail()
-
-    for org in user_data.organisations:
-        print("Getting 7 day insight for", org.name, "User:", user_data.name)
-        insights = await evnex.get_org_insight(days=7, org_id=org.id)
-
-        for segment in insights:
-            print(segment)
+    user = await evnex.get_user_detail()
+    for org in user.organisations:
+        for entry in await evnex.get_org_insight(days=7, org_id=org.id):
+            print(org.name, entry)
 
 
-if __name__ == '__main__':
-    asyncio.run(main())
+asyncio.run(main())
 ```
 
-### Multifactor authentication
+### Multi-factor authentication
 
-Accounts with MFA enabled can't authenticate with username and password alone:
-the first API call raises a challenge exception. Catch it, obtain a code from
-the user, then respond to the challenge:
+If the account has MFA enabled, `start_authentication` returns an
+`AuthChallenge` instead of tokens. Show it to the user, collect their
+6-digit code, and answer it:
 
 ```python
-from pycognito.exceptions import (
-    SMSMFAChallengeException,
-    SoftwareTokenMFAChallengeException,
+from evnex.auth import AuthChallenge
+
+result = await auth.start_authentication(username, password)
+while isinstance(result, AuthChallenge):
+    code = input(f"Enter the 6-digit code ({result.name}): ")
+    result = await auth.respond_to_challenge(result, code)
+```
+
+Challenges are short-lived (a few minutes): `ChallengeExpiredError` means
+start over, while `InvalidChallengeResponseError` means the code was wrong
+and the same challenge can be retried. A challenge serializes to JSON
+(`to_dict()`/`from_dict()`), so a web backend or config flow can answer it
+in a later request or another process.
+
+### Staying signed in
+
+Store the tokens and resume later — the refresh token alone is enough, no
+password or MFA prompt. Expired sessions renew automatically; register
+`on_token_update` to be handed every newly issued token set, and it will
+have completed before any request uses the new tokens, so your stored copy
+can never fall behind one that's already in use:
+
+```python
+from evnex.auth import EvnexAuth, TokenSet
+
+async def save_tokens(tokens: TokenSet) -> None:
+    my_store.write(tokens.to_dict())
+
+auth = EvnexAuth(
+    tokens=TokenSet.from_dict(my_store.read()),
+    on_token_update=save_tokens,
 )
-
-evnex = Evnex(username=username, password=password)
-try:
-    evnex.authenticate()
-except SoftwareTokenMFAChallengeException:
-    code = input("Enter the 6-digit code from your authenticator application: ")
-    evnex.respond_to_mfa_challenge(code, "TOTP")
-except SMSMFAChallengeException:
-    code = input("Enter the 6-digit code you received by SMS: ")
-    evnex.respond_to_mfa_challenge(code, "SMS")
+evnex = Evnex(auth=auth)
+user = await evnex.get_user_detail()
 ```
 
-Note the Cognito challenge session is short-lived (around 3 minutes), so
-prompt for the code promptly.
+If a request is rejected mid-session, the client refreshes and retries it
+once, transparently. When the session truly can't be renewed, calls raise
+`ReauthenticationRequiredError` — run the interactive sign-in again.
 
-The pending challenge is stored on the `Evnex` instance, so the example above
-works because the same instance calls `authenticate()` and
-`respond_to_mfa_challenge()`. If the response happens somewhere else — a
-different process, or a web backend handling a later request — capture the
-challenge session from the exception and hand it to the new instance:
-
-```python
-try:
-    evnex.authenticate()
-except SoftwareTokenMFAChallengeException as challenge:
-    challenge_session = challenge.get_tokens()  # JSON-serializable dict
-
-# later, on a fresh Evnex instance
-evnex.respond_to_mfa_challenge(code, "TOTP", mfa_tokens=challenge_session)
-```
-
-### Resuming a session
-
-To avoid interactive MFA on every start, store the tokens after a successful
-authentication and pass them back in later — the refresh token alone is
-enough. When the API rejects an expired or revoked access token, the client
-refreshes it and retries the request automatically:
-
-```python
-evnex = Evnex(username=username, password=password, refresh_token=refresh_token)
-user_data = await evnex.get_user_detail()  # no MFA prompt needed
-```
-
-See `examples/get_token.py` for a complete MFA + token resumption flow.
+See `examples/get_token.py` for a complete sign-in and persistence flow.
 
 ## Examples
 

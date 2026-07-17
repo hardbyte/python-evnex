@@ -76,3 +76,4 @@ dmypy.json
 cython_debug/
 .idea
 .zed/
+.playwright-mcp/

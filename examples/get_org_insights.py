@@ -1,22 +1,16 @@
 import asyncio
-
-from pydantic import SecretStr
-from pydantic_settings import BaseSettings
+import os
 
 from evnex.api import Evnex
-
-
-class EvnexAuthDetails(BaseSettings):
-    EVNEX_CLIENT_USERNAME: str
-    EVNEX_CLIENT_PASSWORD: SecretStr
+from evnex.auth import EvnexAuth
 
 
 async def main():
-    creds = EvnexAuthDetails()
-    evnex = Evnex(
-        username=creds.EVNEX_CLIENT_USERNAME,
-        password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
+    auth = EvnexAuth()
+    await auth.start_authentication(
+        os.environ["EVNEX_CLIENT_USERNAME"], os.environ["EVNEX_CLIENT_PASSWORD"]
     )
+    evnex = Evnex(auth=auth)
 
     user_data = await evnex.get_user_detail()
 

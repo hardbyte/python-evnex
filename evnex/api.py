@@ -1,21 +1,11 @@
-import asyncio
 import logging
-from functools import wraps
 from importlib.metadata import PackageNotFoundError, version
-from typing import Literal
 from warnings import warn
 
-import botocore
 import pydantic
-from httpx import AsyncClient, HTTPStatusError, ReadTimeout
-from pycognito import Cognito
-from pycognito.exceptions import (
-    MFAChallengeException,
-    TokenVerificationException,
-)
+from httpx import AsyncClient, HTTPStatusError, ReadTimeout, Response
 from pydantic import ValidationError
 from pydantic_core import from_json
-from pydantic_settings import BaseSettings
 from tenacity import (
     retry,
     retry_if_not_exception_type,
@@ -23,7 +13,9 @@ from tenacity import (
     wait_random_exponential,
 )
 
-from evnex.errors import NotAuthorizedException, TokenRefreshedError
+from evnex.auth import EvnexAuth, EvnexHttpxAuth
+from evnex.config import EvnexConfig
+from evnex.errors import EvnexAuthError, ReauthenticationRequiredError
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
@@ -64,35 +56,18 @@ except PackageNotFoundError:
     EVNEX_VERSION = "unknown"
 
 
-class EvnexConfig(BaseSettings):
-    EVNEX_BASE_URL: str = "https://client-api.evnex.io"
-    EVNEX_COGNITO_USER_POOL_ID: str = "ap-southeast-2_zWnqo6ASv"
-    EVNEX_COGNITO_CLIENT_ID: str = "rol3lsv2vg41783550i18r7vi"
-    EVNEX_ORG_ID: str | None = None
-
-
 NON_RETRYABLE_EXCEPTIONS = (
     ValidationError,
-    NotAuthorizedException,
-    MFAChallengeException,
+    EvnexAuthError,
 )
-
-
-def _raise_final_attempt(retry_state):
-    """Called by tenacity once retries are exhausted."""
-    exception = retry_state.outcome.exception()
-    if isinstance(exception, TokenRefreshedError):
-        raise NotAuthorizedException(
-            "Request still unauthorized after refreshing tokens"
-        ) from exception
-    raise exception
 
 
 def api_retry(*extra_non_retryable: type[BaseException]):
     """Retry transient API failures with backoff.
 
-    Authentication failures, MFA challenges and validation errors are never
-    retried, nor are any exception types passed as arguments.
+    Authentication failures and validation errors are never retried, nor are
+    any exception types passed as arguments. Authentication recovery happens
+    in the transport layer (EvnexHttpxAuth), independent of this policy.
     """
     return retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -100,203 +75,59 @@ def api_retry(*extra_non_retryable: type[BaseException]):
         retry=retry_if_not_exception_type(
             NON_RETRYABLE_EXCEPTIONS + extra_non_retryable
         ),
-        retry_error_callback=_raise_final_attempt,
+        # Surface the final underlying exception, not tenacity's RetryError
+        reraise=True,
     )
-
-
-def ensure_authenticated(func):
-    """Decorator to ensure we hold session tokens before making an API call.
-
-    Token expiry is handled reactively: a 401 response triggers a refresh
-    and the request is retried (see Evnex._check_api_response).
-    """
-
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        await self._ensure_authenticated()
-        return await func(self, *args, **kwargs)
-
-    return wrapper
 
 
 class Evnex:
     def __init__(
         self,
-        username: str,
-        password: str,
-        id_token=None,
-        refresh_token=None,
-        access_token=None,
-        config: EvnexConfig | None = None,
+        *,
+        auth: EvnexAuth,
         httpx_client: AsyncClient | None = None,
+        config: EvnexConfig | None = None,
     ):
         """
         Create an Evnex API client.
 
-        :param username:
-        :param password:
-        :param id_token: ID Token returned by authentication
-        :param refresh_token: Refresh Token returned by authentication
-        :param access_token: Access Token returned by authentication
-        :param httpx_client:
+        :param auth: the authentication component owning the session tokens
+        :param httpx_client: optionally share an httpx AsyncClient
+        :param config: override API endpoints or the default org
         """
         self.httpx_client = httpx_client or AsyncClient()
         if config is None:
             config = EvnexConfig()
-        logger.debug("Creating evnex api instance")
-        self.username = username
-        self.password = password
-
+        self.auth = auth
         self.org_id = config.EVNEX_ORG_ID
-
-        self.cognito = Cognito(
-            user_pool_id=config.EVNEX_COGNITO_USER_POOL_ID,
-            client_id=config.EVNEX_COGNITO_CLIENT_ID,
-            username=username,
-            id_token=id_token,
-            refresh_token=refresh_token,
-            access_token=access_token,
-        )
-
-        self._token_lock = asyncio.Lock()
-        # Tokens passed in by the caller haven't been through pycognito's
-        # signature verification; defer that to the first API call rather
-        # than doing network I/O in the constructor.
-        self._resumed_tokens_verified = access_token is None
-
         self.version = EVNEX_VERSION
-
-    async def _ensure_authenticated(self) -> None:
-        """Ensure we hold session tokens, signing in on first use.
-
-        :raises NotAuthorizedException: authentication failed
-        :raises SoftwareTokenMFAChallengeException: respond with a TOTP app code
-        :raises SMSMFAChallengeException: respond with a code sent by SMS
-        """
-        if self.cognito.access_token is not None and self._resumed_tokens_verified:
-            return
-
-        async with self._token_lock:
-            if self.cognito.access_token is None:
-                if self.cognito.refresh_token:
-                    logger.debug("No access token, renewing with refresh token")
-                    try:
-                        await asyncio.to_thread(self.cognito.renew_access_token)
-                    except botocore.exceptions.ClientError as e:
-                        raise NotAuthorizedException(str(e)) from e
-                else:
-                    logger.debug("No tokens, starting cognito auth flow")
-                    await asyncio.to_thread(self.authenticate)
-            elif not self._resumed_tokens_verified:
-                try:
-                    await asyncio.to_thread(self.cognito.verify_tokens)
-                except TokenVerificationException as e:
-                    raise NotAuthorizedException(str(e)) from e
-            self._resumed_tokens_verified = True
-
-    async def _refresh_session(self, stale_access_token: str | None) -> None:
-        """Obtain fresh tokens after the API rejected the current ones.
-
-        Single-flight: concurrent callers that failed with the same stale
-        token wait on the lock and return without a second refresh.
-
-        :raises NotAuthorizedException: the session could not be renewed
-        """
-        async with self._token_lock:
-            if self.cognito.access_token != stale_access_token:
-                return
-            logger.debug("API rejected the session token, refreshing")
-            try:
-                if self.cognito.refresh_token:
-                    await asyncio.to_thread(self.cognito.renew_access_token)
-                else:
-                    await asyncio.to_thread(self.authenticate)
-            except botocore.exceptions.ClientError as e:
-                raise NotAuthorizedException(str(e)) from e
+        self._base_url = config.EVNEX_BASE_URL.rstrip("/")
+        self._httpx_auth = EvnexHttpxAuth(auth)
 
     @property
     def _common_headers(self):
+        # Authorization is injected per-request by EvnexHttpxAuth
         return {
             "Accept": "application/json",
             "content-type": "application/json",
-            "Authorization": self.access_token,
             "User-Agent": f"python-evnex/{self.version}",
         }
 
-    def authenticate(self):
-        """
-        Authenticate the user and update the access_token.
-
-        Note this isn't usually required: API methods authenticate on first
-        use. Call it directly when the account may have multifactor
-        authentication enabled, catch the challenge exception, obtain a code
-        from the user, then call respond_to_mfa_challenge().
-
-        :raises NotAuthorizedException: authentication failed
-        :raises SoftwareTokenMFAChallengeException: respond with a TOTP app code
-        :raises SMSMFAChallengeException: respond with a code sent by SMS
-        """
-        logger.debug("Authenticating to EVNEX cloud api")
-        try:
-            self.cognito.authenticate(password=self.password)
-        except MFAChallengeException:
-            raise
-        except botocore.exceptions.ClientError as e:
-            raise NotAuthorizedException(e.args[0]) from e
-
-    def respond_to_mfa_challenge(
-        self,
-        mfa_code: str,
-        mode: Literal["SMS", "TOTP"],
-        mfa_tokens=None,
-    ):
-        """
-        Respond to a multifactor authentication challenge either via SMS or TOTP app.
-
-        The challenge session is kept on this instance by authenticate(); to
-        respond from a different instance or process, pass mfa_tokens from
-        the challenge exception's get_tokens(). Note Cognito challenge
-        sessions are short-lived (around 3 minutes).
-
-        :raises NotAuthorizedException: the code was rejected or the challenge expired
-        :raises ValueError: mode is not "SMS" or "TOTP"
-        """
-        logger.debug("MFA Challenge and response issued.")
-
-        try:
-            match mode:
-                case "SMS":
-                    self.cognito.respond_to_sms_mfa_challenge(
-                        mfa_code, mfa_tokens=mfa_tokens
-                    )
-                case "TOTP":
-                    self.cognito.respond_to_software_token_mfa_challenge(
-                        mfa_code, mfa_tokens=mfa_tokens
-                    )
-                case _:
-                    raise ValueError(
-                        f"Unknown MFA mode {mode!r}, expected 'SMS' or 'TOTP'"
-                    )
-        except botocore.exceptions.ClientError as e:
-            raise NotAuthorizedException(e.args[0]) from e
-
-    @property
-    def access_token(self):
-        return self.cognito.access_token
-
-    @property
-    def id_token(self):
-        return self.cognito.id_token
-
-    @property
-    def refresh_token(self):
-        return self.cognito.refresh_token
+    async def _request(self, method: str, path: str, **kwargs) -> Response:
+        """Single request path: base URL, headers, auth, and 401 recovery."""
+        return await self.httpx_client.request(
+            method,
+            f"{self._base_url}{path}",
+            headers=self._common_headers,
+            auth=self._httpx_auth,
+            **kwargs,
+        )
 
     @api_retry()
-    @ensure_authenticated
     async def get_user_detail(self) -> EvnexUserDetail:
-        response = await self.httpx_client.get(
-            "https://client-api.evnex.io/v2/apps/user", headers=self._common_headers
+        response = await self._request(
+            "GET",
+            "/v2/apps/user",
         )
         response_json = await self._check_api_response(response)
         data = EvnexGetUserResponse.model_validate(response_json).data
@@ -307,60 +138,52 @@ class Evnex:
 
         return data
 
-    async def _check_api_response(self, response):
+    def _ensure_success(self, response) -> None:
         if response.status_code == 401:
-            # A 401 means the server rejected the request before executing
-            # it, so re-sending with fresh tokens is safe even for commands.
-            # The retry policy re-sends; a persistent 401 surfaces to the
-            # caller as NotAuthorizedException via _raise_final_attempt.
-            await self._refresh_session(
-                stale_access_token=response.request.headers.get("Authorization")
+            # EvnexHttpxAuth already refreshed and re-sent once; a 401 here
+            # means the renewed session is still rejected
+            raise ReauthenticationRequiredError(
+                "Request still unauthorized after refreshing the session"
             )
-            raise TokenRefreshedError()
         if not response.is_success:
             logger.warning(
                 f"Unsuccessful request\n{response.status_code}\n{response.text}"
             )
-        # logger.debug(
-        #     f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
-        # )
-
         response.raise_for_status()
+
+    async def _check_api_response(self, response):
+        self._ensure_success(response)
 
         try:
             return from_json(response.text)
-        except:
+        except Exception:
             logger.debug(
                 f"Invalid json response.\n{response.status_code}\n{response.text}"
             )
             raise
 
     @api_retry(HTTPStatusError)
-    @ensure_authenticated
     async def get_org_charge_points(
         self, org_id: str | None = None
     ) -> list[EvnexChargePoint]:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Listing org charge points")
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points",
-            headers=self._common_headers,
+        r = await self._request(
+            "GET",
+            f"/v2/apps/organisations/{org_id}/charge-points",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointsResponse.model_validate(json_data).data.items
 
     @api_retry()
-    @ensure_authenticated
     async def get_org_insight(
         self, days: int, org_id: str | None = None, tz_offset: int = 12
     ) -> list[EvnexOrgInsightEntry]:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Getting org insight")
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/organisations/{org_id}/summary/insights",
-            headers=self._common_headers,
+        r = await self._request(
+            "GET",
+            f"/organisations/{org_id}/summary/insights",
             params={"days": days, "tz-offset": tz_offset},
         )
         json_data = await self._check_api_response(r)
@@ -369,22 +192,19 @@ class Evnex:
         return [insight.attributes for insight in validated_data]
 
     @api_retry()
-    @ensure_authenticated
     async def get_org_summary_status(
         self, org_id: str | None = None
     ) -> EvnexOrgSummaryStatus:
         if org_id is None and self.org_id:
             org_id = self.org_id
-        logger.debug("Getting org summary status")
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/summary/status",
-            headers=self._common_headers,
+        r = await self._request(
+            "GET",
+            f"/v2/apps/organisations/{org_id}/summary/status",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetOrgSummaryStatusResponse.model_validate(json_data).data
 
     @api_retry()
-    @ensure_authenticated
     async def get_charge_point_detail(
         self, charge_point_id: str
     ) -> EvnexChargePointDetail:
@@ -393,31 +213,26 @@ class Evnex:
             DeprecationWarning,
             stacklevel=2,
         )
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}",
-            headers=self._common_headers,
+        r = await self._request(
+            "GET",
+            f"/v2/apps/charge-points/{charge_point_id}",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointDetailResponse.model_validate(json_data).data
 
     @api_retry(TypeError)
-    @ensure_authenticated
     async def get_charge_point_detail_v3(
         self, charge_point_id: str
     ) -> EvnexV3APIResponse[EvnexChargePointDetailV3]:
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}",
-            headers=self._common_headers,
-        )
-        logger.debug(
-            f"Raw get charge point detail response.\n{r.status_code}\n{r.text}"
+        r = await self._request(
+            "GET",
+            f"/charge-points/{charge_point_id}",
         )
         json_data = await self._check_api_response(r)
 
         return EvnexV3APIResponse[EvnexChargePointDetailV3].model_validate(json_data)
 
     @api_retry(ReadTimeout)
-    @ensure_authenticated
     async def get_charge_point_solar_config(
         self, charge_point_id: str
     ) -> EvnexChargePointSolarConfig:
@@ -425,16 +240,15 @@ class Evnex:
         :param charge_point_id:
         :raises: ReadTimeout if the charge point is offline.
         """
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-solar",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/charge-points/{charge_point_id}/commands/get-solar",
         )
         json_data = await self._check_api_response(r)
 
         return EvnexChargePointSolarConfig.model_validate(json_data)
 
     @api_retry(ReadTimeout)
-    @ensure_authenticated
     async def get_charge_point_override(
         self, charge_point_id: str
     ) -> EvnexChargePointOverrideConfig:
@@ -443,29 +257,27 @@ class Evnex:
         :param charge_point_id:
         :raises: ReadTimeout if the charge point is offline.
         """
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-override",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/charge-points/{charge_point_id}/commands/get-override",
             timeout=15,
         )
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig.model_validate(json_data)
 
-    @api_retry()
-    @ensure_authenticated
+    @api_retry(HTTPStatusError)
     async def set_charge_point_override(
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
     ):
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/set-override",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/charge-points/{charge_point_id}/commands/set-override",
             json={"connectorId": connector_id, "chargeNow": charge_now},
         )
-        r.raise_for_status()
+        self._ensure_success(r)
         return True
 
     @api_retry(ReadTimeout)
-    @ensure_authenticated
     async def get_charge_point_status(
         self, charge_point_id: str
     ) -> EvnexChargePointStatusResponse:
@@ -473,16 +285,15 @@ class Evnex:
         :param charge_point_id:
         :raises: ReadTimeout if the charge point is offline.
         """
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-status",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/charge-points/{charge_point_id}/commands/get-status",
         )
         json_data = await self._check_api_response(r)
 
         return EvnexChargePointStatusResponse.model_validate(json_data)
 
     @api_retry(ReadTimeout)
-    @ensure_authenticated
     async def get_charge_point_energy_meter_reading(
         self, charge_point_id: str
     ) -> EvnexChargePointEnergyMeterReadingResponse:
@@ -490,16 +301,15 @@ class Evnex:
         :param charge_point_id:
         :raises: ReadTimeout if the charge point is offline.
         """
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
         )
         json_data = await self._check_api_response(r)
 
         return EvnexChargePointEnergyMeterReadingResponse.model_validate(json_data)
 
     @api_retry()
-    @ensure_authenticated
     async def get_charge_point_transactions(
         self, charge_point_id: str
     ) -> list[EvnexChargePointTransaction]:
@@ -508,11 +318,10 @@ class Evnex:
             DeprecationWarning,
             stacklevel=2,
         )
-        # Similar to f'https://client-api.evnex.io/v3/charge-points/{charge_point_id}/sessions',
 
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/transactions",
-            headers=self._common_headers,
+        r = await self._request(
+            "GET",
+            f"/v2/apps/charge-points/{charge_point_id}/transactions",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointTransactionsResponse.model_validate(
@@ -520,19 +329,17 @@ class Evnex:
         ).data.items
 
     @api_retry()
-    @ensure_authenticated
     async def get_charge_point_sessions(
         self, charge_point_id: str
     ) -> list[EvnexChargePointSession]:
-        r = await self.httpx_client.get(
-            f"https://client-api.evnex.io/charge-points/{charge_point_id}/sessions",
-            headers=self._common_headers,
+        r = await self._request(
+            "GET",
+            f"/charge-points/{charge_point_id}/sessions",
         )
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
-    @api_retry(ReadTimeout)
-    @ensure_authenticated
+    @api_retry(HTTPStatusError, ReadTimeout)
     async def stop_charge_point(
         self,
         charge_point_id: str,
@@ -554,9 +361,9 @@ class Evnex:
         if org_id is None and self.org_id:
             org_id = self.org_id
         logger.info("Stopping charging session")
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/remote-stop-transaction",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/remote-stop-transaction",
             # 'Connection': 'Keep-Alive'
             json={"connectorId": connector_id},
             timeout=timeout,
@@ -585,7 +392,6 @@ class Evnex:
             connector_id=connector_id,
         )
 
-    @ensure_authenticated
     async def set_charger_availability(
         self,
         org_id: str,
@@ -605,9 +411,9 @@ class Evnex:
         """
         availability = "Operative" if available else "Inoperative"
         logger.info(f"Changing connector {connector_id} to {availability}")
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/change-availability",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/v2/apps/organisations/{org_id}/charge-points/{charge_point_id}/commands/change-availability",
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
@@ -615,7 +421,6 @@ class Evnex:
 
         return EvnexCommandResponseV3.model_validate(json_data["data"])
 
-    @ensure_authenticated
     async def unlock_charger(
         self,
         charge_point_id: str,
@@ -635,16 +440,15 @@ class Evnex:
         """
         availability = "Operative" if available else "Inoperative"
         logger.info(f"Changing connector {connector_id} to {availability}")
-        r = await self.httpx_client.post(
-            f"https://client-api.evnex.io/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/unlock-connector",
-            headers=self._common_headers,
+        r = await self._request(
+            "POST",
+            f"/v2/apps/organisations/{self.org_id}/charge-points/{charge_point_id}/commands/unlock-connector",
             json={"connectorId": connector_id, "changeAvailabilityType": availability},
             timeout=timeout,
         )
         json_data = await self._check_api_response(r)
         return EvnexCommandResponse.model_validate(json_data["data"])
 
-    @ensure_authenticated
     async def set_charger_load_profile(
         self,
         charge_point_id: str,
@@ -668,9 +472,9 @@ class Evnex:
             )
         ]
 
-        r = await self.httpx_client.put(
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/load-management",
-            headers=self._common_headers,
+        r = await self._request(
+            "PUT",
+            f"/v2/apps/charge-points/{charge_point_id}/load-management",
             json={
                 "chargingProfilePeriods": schedule,
                 "enabled": enabled,
@@ -682,7 +486,6 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexChargePointLoadSchedule.model_validate(json_data["data"])
 
-    @ensure_authenticated
     async def set_charge_point_schedule(
         self,
         charge_point_id: str,
@@ -710,9 +513,9 @@ class Evnex:
             )
         ]
 
-        r = await self.httpx_client.put(
-            f"https://client-api.evnex.io/v2/apps/charge-points/{charge_point_id}/charge-schedule",
-            headers=self._common_headers,
+        r = await self._request(
+            "PUT",
+            f"/v2/apps/charge-points/{charge_point_id}/charge-schedule",
             json={
                 "chargingProfilePeriods": schedule,
                 "enabled": enabled,
