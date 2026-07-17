@@ -14,7 +14,7 @@ repos:
       - id: ruff-format
         types_or: [ python, pyi ]
   - repo: https://github.com/JelleZijlstra/autotyping
-    rev: master
+    rev: 24.9.0
     hooks:
       - id: autotyping
         stages: [ pre-commit ]
