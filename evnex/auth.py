@@ -38,6 +38,10 @@ EXPIRY_SKEW = timedelta(seconds=30)
 
 TokenUpdateCallback = Callable[["TokenSet"], Awaitable[None]]
 
+# Sentinel distinguishing "always refresh" from "refresh unless the tokens
+# already rotated past this stale access token (which may be None)"
+_ALWAYS_REFRESH: Any = object()
+
 
 def _decode_expiry(access_token: str) -> datetime | None:
     """Best-effort read of the JWT exp claim; the server stays authoritative."""
@@ -52,13 +56,13 @@ def _decode_expiry(access_token: str) -> datetime | None:
 class TokenSet:
     """An immutable set of session tokens, safe to persist and to log."""
 
-    access_token: str = field(repr=False)
+    access_token: str | None = field(repr=False, default=None)
     id_token: str | None = field(repr=False, default=None)
     refresh_token: str | None = field(repr=False, default=None)
     expires_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        if self.expires_at is None:
+        if self.expires_at is None and self.access_token:
             object.__setattr__(self, "expires_at", _decode_expiry(self.access_token))
 
     def to_dict(self) -> dict[str, Any]:
@@ -75,7 +79,7 @@ class TokenSet:
         if isinstance(expires_at, str):
             expires_at = datetime.fromisoformat(expires_at)
         return cls(
-            access_token=data["access_token"],
+            access_token=data.get("access_token"),
             id_token=data.get("id_token"),
             refresh_token=data.get("refresh_token"),
             expires_at=expires_at,
@@ -225,23 +229,37 @@ class EvnexAuth:
         :raises ReauthenticationRequiredError: no usable session exists
         """
         tokens = self._tokens
-        if tokens is None:
-            return (await self.force_refresh()).access_token
+        if tokens is None or tokens.access_token is None:
+            refreshed = await self.force_refresh(
+                stale_access_token=tokens.access_token if tokens else None
+            )
+            return self._require_access_token(refreshed)
         if tokens.expires_at is not None:
             now = datetime.now(tz=UTC)
             if now >= tokens.expires_at - EXPIRY_SKEW:
                 refreshed = await self.force_refresh(
                     stale_access_token=tokens.access_token
                 )
-                return refreshed.access_token
+                return self._require_access_token(refreshed)
         return tokens.access_token
 
-    async def force_refresh(self, *, stale_access_token: str | None = None) -> TokenSet:
+    @staticmethod
+    def _require_access_token(tokens: TokenSet) -> str:
+        if tokens.access_token is None:
+            raise ReauthenticationRequiredError(
+                "The refreshed session did not include an access token"
+            )
+        return tokens.access_token
+
+    async def force_refresh(
+        self, *, stale_access_token: str | None = _ALWAYS_REFRESH
+    ) -> TokenSet:
         """Obtain fresh tokens using the refresh token.
 
-        Single-flight: pass the access token that was rejected as
-        stale_access_token, and callers that lost the race return the
-        already-rotated token set without refreshing again.
+        Single-flight: pass the access token that was rejected (possibly
+        None for a session that never had one) as stale_access_token, and
+        callers that lost the race return the already-rotated token set
+        without refreshing again. Omit it to refresh unconditionally.
 
         :raises ReauthenticationRequiredError: no refresh token, or Cognito
             rejected it
@@ -250,7 +268,7 @@ class EvnexAuth:
             current = self._tokens
             if (
                 current is not None
-                and stale_access_token is not None
+                and stale_access_token is not _ALWAYS_REFRESH
                 and current.access_token != stale_access_token
             ):
                 return current
@@ -297,8 +315,12 @@ class EvnexAuth:
         )
 
     async def _store_tokens(self, tokens: TokenSet) -> None:
-        """Publish a new token set. Called with the lock held."""
-        self._tokens = tokens
+        """Persist, then publish, a new token set. Called with the lock held.
+
+        The callback runs before the tokens become visible to other tasks
+        (including get_access_token's unlocked fast path), so a token set can
+        never be used for a request before the application has persisted it.
+        """
         if self._on_token_update is not None:
             try:
                 await self._on_token_update(tokens)
@@ -306,6 +328,7 @@ class EvnexAuth:
                 # A failing token store must not break API access; the
                 # application can reconcile from .tokens at any time
                 logger.exception("Token update callback failed")
+        self._tokens = tokens
 
 
 class EvnexHttpxAuth(httpx.Auth):

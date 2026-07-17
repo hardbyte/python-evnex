@@ -289,3 +289,96 @@ class TestTransport:
 
         assert all(user.name == "Test User" for user in users)
         client.auth._cognito.renew_access_token.assert_called_once()
+
+
+class TestReviewRegressions:
+    """Regressions for the PR #114 review findings."""
+
+    async def test_refresh_token_only_token_set(self):
+        # Constructible without an access token, including via from_dict
+        tokens = TokenSet(refresh_token="refresh-0")
+        assert tokens.access_token is None
+        assert TokenSet.from_dict({"refresh_token": "refresh-0"}) == tokens
+
+        auth = EvnexAuth(tokens=tokens)
+        assert await auth.get_access_token() == "access-1"
+
+    async def test_refresh_only_resume_makes_no_wasted_request(self):
+        auth = EvnexAuth(tokens=TokenSet(refresh_token="refresh-0"))
+        client = Evnex(auth=auth)
+
+        with respx.mock:
+            route = respx.get(USER_URL).mock(
+                return_value=httpx.Response(200, json=USER_PAYLOAD)
+            )
+            await client.get_user_detail()
+
+        # The refresh happened before the request, not via a 401 round-trip
+        assert route.call_count == 1
+        assert route.calls[0].request.headers["Authorization"] == "access-1"
+
+    async def test_concurrent_refresh_only_startup_single_flight(self):
+        auth = EvnexAuth(tokens=TokenSet(refresh_token="refresh-0"))
+        client = Evnex(auth=auth)
+
+        with respx.mock:
+            respx.get(USER_URL).mock(
+                return_value=httpx.Response(200, json=USER_PAYLOAD)
+            )
+            await asyncio.gather(client.get_user_detail(), client.get_user_detail())
+
+        auth._cognito.renew_access_token.assert_called_once()
+
+    async def test_tokens_published_only_after_persistence(self):
+        gate = asyncio.Event()
+        observed_during_persist = []
+
+        async def slow_save(tokens: TokenSet) -> None:
+            observed_during_persist.append(auth.tokens)
+            await gate.wait()
+
+        auth = EvnexAuth(
+            tokens=TokenSet(refresh_token="refresh-0"), on_token_update=slow_save
+        )
+        refresh = asyncio.create_task(auth.force_refresh())
+        while not observed_during_persist:
+            await asyncio.sleep(0)
+
+        # Mid-persistence, other tasks must still see the old token set
+        assert observed_during_persist[0] is not None
+        assert observed_during_persist[0].access_token is None
+        assert auth.tokens.access_token is None
+
+        gate.set()
+        new_tokens = await refresh
+        assert auth.tokens is new_tokens
+
+    async def test_retry_exhaustion_reraises_underlying_error(self, client):
+        with respx.mock:
+            route = respx.get(USER_URL).mock(
+                side_effect=httpx.ConnectError("connection refused")
+            )
+            with pytest.raises(httpx.ConnectError):
+                await client.get_user_detail()
+
+        assert route.call_count == 5  # stop_after_attempt, then reraise
+
+    async def test_override_persistent_401_not_retried(self, resumed_auth, monkeypatch):
+        from tenacity import wait_none
+
+        client = Evnex(auth=resumed_auth)
+        monkeypatch.setattr(Evnex.set_charge_point_override.retry, "wait", wait_none())
+        override_url = (
+            "https://client-api.evnex.io/charge-points/cp-1/commands/set-override"
+        )
+
+        with respx.mock:
+            route = respx.post(override_url).mock(return_value=httpx.Response(401))
+            with pytest.raises(ReauthenticationRequiredError):
+                await client.set_charge_point_override(
+                    charge_point_id="cp-1", charge_now=True
+                )
+
+        # One original send + exactly one auth-flow resend; the command was
+        # never submitted repeatedly
+        assert route.call_count == 2

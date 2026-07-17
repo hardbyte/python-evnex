@@ -75,6 +75,8 @@ def api_retry(*extra_non_retryable: type[BaseException]):
         retry=retry_if_not_exception_type(
             NON_RETRYABLE_EXCEPTIONS + extra_non_retryable
         ),
+        # Surface the final underlying exception, not tenacity's RetryError
+        reraise=True,
     )
 
 
@@ -136,7 +138,7 @@ class Evnex:
 
         return data
 
-    async def _check_api_response(self, response):
+    def _ensure_success(self, response) -> None:
         if response.status_code == 401:
             # EvnexHttpxAuth already refreshed and re-sent once; a 401 here
             # means the renewed session is still rejected
@@ -147,11 +149,10 @@ class Evnex:
             logger.warning(
                 f"Unsuccessful request\n{response.status_code}\n{response.text}"
             )
-        # logger.debug(
-        #     f"Raw EVNEX API response.\n{response.status_code}\n{response.text}"
-        # )
-
         response.raise_for_status()
+
+    async def _check_api_response(self, response):
+        self._ensure_success(response)
 
         try:
             return from_json(response.text)
@@ -279,7 +280,7 @@ class Evnex:
             f"https://client-api.evnex.io/charge-points/{charge_point_id}/commands/set-override",
             json={"connectorId": connector_id, "chargeNow": charge_now},
         )
-        r.raise_for_status()
+        self._ensure_success(r)
         return True
 
     @api_retry(ReadTimeout)
