@@ -125,7 +125,7 @@ authenticator device.
 
 ### Changing or resetting your password
 
-`EvnexAuth` also wraps Cognito's password operations:
+`EvnexAuth` also manages the account password:
 
 ```python
 # Change the password of a signed-in account:
@@ -152,7 +152,7 @@ export EVNEX_CLIENT_PASSWORD=<your password>
 uvx evnex auth login                 # sign in (uses cached tokens when valid)
 uvx evnex auth status                # signed-in user, session, and MFA state
 uvx evnex auth logout                # forget the cached session
-uvx evnex auth mfa enable            # enrol a TOTP device and turn MFA on
+uvx evnex auth mfa enable            # enroll a TOTP device and turn MFA on
 uvx evnex auth mfa disable           # turn MFA off entirely
 uvx evnex auth change-password       # change your password (prompts)
 uvx evnex auth reset-password        # reset a forgotten password via email
