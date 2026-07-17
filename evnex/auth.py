@@ -142,10 +142,15 @@ class TotpEnrollment:
 
     secret: str = field(repr=False)
 
-    def provisioning_uri(self, account_name: str, issuer: str = "EVNEX") -> str:
-        """An otpauth:// URI suitable for rendering as a QR code."""
-        label = quote(f"{issuer}:{account_name}")
-        return f"otpauth://totp/{label}?secret={self.secret}&issuer={quote(issuer)}"
+    def provisioning_uri(self, account_name: str, issuer: str = "Evnex") -> str:
+        """An otpauth:// URI for QR rendering or a password manager's OTP field.
+
+        Matches the label/issuer conventions of EVNEX's own enrollment.
+        """
+        return (
+            f"otpauth://totp/{quote(account_name)}"
+            f"?secret={self.secret}&issuer={quote(issuer)}"
+        )
 
 
 @dataclass(frozen=True, slots=True)

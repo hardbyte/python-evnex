@@ -467,7 +467,8 @@ class TestMfaManagement:
 
         assert enrollment.secret == "FAKESECRETBASE32"
         uri = enrollment.provisioning_uri("user@example.com")
-        assert uri.startswith("otpauth://totp/EVNEX%3Auser%40example.com?")
+        assert uri.startswith("otpauth://totp/user%40example.com?")
+        assert "issuer=Evnex" in uri
         assert "secret=FAKESECRETBASE32" in uri
         assert "secret" not in repr(enrollment).lower() or "FAKESECRET" not in repr(
             enrollment

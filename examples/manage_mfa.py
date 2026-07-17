@@ -85,8 +85,17 @@ async def signed_in_auth(args: argparse.Namespace) -> EvnexAuth:
     )
     result = await auth.start_authentication(username, password)
     while isinstance(result, AuthChallenge):
-        code = args.code or input(f"Enter the 6-digit code ({result.name}): ")
-        args.code = None  # a code is single-use
+        if args.code:
+            code, args.code = args.code, None  # a code is single-use
+        elif args.code_command:
+            proc = await asyncio.create_subprocess_shell(
+                args.code_command, stdout=asyncio.subprocess.PIPE
+            )
+            stdout, _ = await proc.communicate()
+            code = stdout.decode().strip()
+            print("Code obtained from --code-command", file=sys.stderr)
+        else:
+            code = input(f"Enter the 6-digit code ({result.name}): ")
         result = await auth.respond_to_challenge(result, code)
     print(f"Signed in as {username}; session cached at {cache}", file=sys.stderr)
     return auth
@@ -121,8 +130,10 @@ async def cmd_enroll_totp(args: argparse.Namespace) -> None:
     account = os.environ.get("EVNEX_CLIENT_USERNAME", "evnex-account")
     uri = enrollment.provisioning_uri(account)
 
-    print("Scan this QR code with your authenticator app,")
-    print(f"or add the secret manually: {enrollment.secret}\n")
+    print("Scan this QR code with your authenticator app, or paste the")
+    print("otpauth URI into a password manager's one-time password field:\n")
+    print(f"  {uri}\n")
+    print(f"(bare secret for manual entry: {enrollment.secret})\n")
     show_qr(uri, open_browser=args.browser)
     print(
         "\nThen run: uv run examples/manage_mfa.py confirm-totp CODE"
@@ -164,6 +175,11 @@ def main() -> None:
         help=f"where to cache session tokens (default: {DEFAULT_CACHE})",
     )
     parser.add_argument("--code", help="6-digit code to answer a sign-in MFA challenge")
+    parser.add_argument(
+        "--code-command",
+        help="shell command that prints a current MFA code, e.g. "
+        "'op item get Evnex --otp' for 1Password",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("status", help="show which MFA methods are enabled")
