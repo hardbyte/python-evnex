@@ -474,19 +474,30 @@ class EvnexAuth:
         # may itself acquire self._lock, so locking first would deadlock.
         access_token = await self.get_access_token()
 
-        def _change() -> None:
+        def _change() -> bool:
             cognito = self._ensure_cognito()
             cognito.access_token = access_token
+            current = self._tokens
+            cognito.id_token = current.id_token if current else None
+            cognito.refresh_token = current.refresh_token if current else None
             cognito.change_password(current_password, new_password)
+            # pycognito's change_password runs check_token(renew=True), which
+            # can rotate tokens on the Cognito object; report whether it did
+            # so the rotation is published rather than silently dropped
+            return bool(cognito.access_token != access_token)
 
         async with self._lock:
             try:
-                await asyncio.to_thread(_change)
+                rotated = await asyncio.to_thread(_change)
             except botocore.exceptions.ClientError as err:
                 code = err.response.get("Error", {}).get("Code", "")
                 if code == "NotAuthorizedException":
                     raise InvalidCredentialsError(_error_message(err)) from err
                 raise EvnexAuthError(_error_message(err)) from err
+            if rotated:
+                await self._store_tokens(
+                    self._tokens_from_cognito(self._ensure_cognito())
+                )
 
     async def start_password_reset(self, username: str) -> str:
         """Begin the forgot-password flow, sending a reset code to the user.
