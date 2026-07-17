@@ -1,10 +1,27 @@
 class NotAuthorizedException(ValueError):
-    pass
+    """Historic base error for authentication problems.
 
-
-class TokenRefreshedError(Exception):
-    """A 401 response triggered a successful token refresh.
-
-    Internal to the retry policy: the request is retried with the fresh
-    tokens, and if it keeps failing the caller sees NotAuthorizedException.
+    Retained so existing ``except NotAuthorizedException`` handlers keep
+    working; new code should catch the EvnexAuthError hierarchy below.
+    The inheritance will be removed in 0.8.0.
     """
+
+
+class EvnexAuthError(NotAuthorizedException):
+    """Base for authentication lifecycle errors."""
+
+
+class InvalidCredentialsError(EvnexAuthError):
+    """The username or password was rejected."""
+
+
+class ReauthenticationRequiredError(EvnexAuthError):
+    """The session cannot be renewed; interactive authentication is needed."""
+
+
+class ChallengeExpiredError(EvnexAuthError):
+    """The short-lived challenge session lapsed; restart authentication."""
+
+
+class InvalidChallengeResponseError(EvnexAuthError):
+    """The challenge response (e.g. MFA code) was rejected; retry is possible."""

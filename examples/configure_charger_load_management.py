@@ -5,6 +5,7 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings
 
 from evnex.api import Evnex
+from evnex.auth import EvnexAuth
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -16,10 +17,11 @@ class EvnexAuthDetails(BaseSettings):
 
 async def main():
     creds = EvnexAuthDetails()
-    evnex = Evnex(
-        username=creds.EVNEX_CLIENT_USERNAME,
-        password=creds.EVNEX_CLIENT_PASSWORD.get_secret_value(),
+    auth = EvnexAuth()
+    await auth.start_authentication(
+        creds.EVNEX_CLIENT_USERNAME, creds.EVNEX_CLIENT_PASSWORD.get_secret_value()
     )
+    evnex = Evnex(auth=auth)
 
     user_data = await evnex.get_user_detail()
     for org in user_data.organisations:

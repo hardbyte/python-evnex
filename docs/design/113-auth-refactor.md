@@ -139,7 +139,7 @@ class EvnexHttpxAuth(httpx.Auth):
     def __init__(self, auth: EvnexAuth): ...
 
     async def async_auth_flow(self, request):
-        token = await self._auth.async_get_access_token()
+        token = await self._auth.get_access_token()
         request.headers["Authorization"] = token
         response = yield request
         if response.status_code == 401:
