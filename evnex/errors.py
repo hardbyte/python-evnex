@@ -32,6 +32,14 @@ class InvalidChallengeResponseError(EvnexAuthError):
     """The challenge response (e.g. MFA code) was rejected; retry is possible."""
 
 
+class EvnexConfigurationError(ValueError):
+    """A required client configuration value is missing or invalid.
+
+    Deterministic and never worth retrying (e.g. no organisation id could be
+    resolved for an org-scoped call).
+    """
+
+
 def __getattr__(name: str):
     # Deprecated alias, served dynamically so importing it warns.
     # Removed in 0.8.0.

@@ -9,6 +9,7 @@ real pydantic response models (see test_fixtures_validate_against_models).
 
 import asyncio
 import json
+import time
 
 import httpx
 import pytest
@@ -16,6 +17,7 @@ import respx
 
 from evnex.cli import _resources, build_parser
 from evnex.cli._resources import _match_charge_point, _resolve_one
+from evnex.errors import EvnexConfigurationError
 from evnex.schema.charge_points import EvnexGetChargePointsResponse
 from evnex.schema.org import EvnexGetOrgInsights
 from evnex.schema.user import EvnexGetUserResponse
@@ -644,10 +646,14 @@ async def test_get_org_connector_summary(client):
 
 async def test_org_method_without_org_id_raises(client):
     # No org_id argument and no default resolved yet: fail clearly rather than
-    # requesting a path with a literal "None" in it.
+    # requesting a path with a literal "None" in it. The error must be
+    # non-retryable, so this returns immediately instead of spending the retry
+    # decorator's exponential backoff before surfacing.
     client.org_id = None
-    with pytest.raises(ValueError, match="No organisation id"):
+    started = time.monotonic()
+    with pytest.raises(EvnexConfigurationError, match="No organisation id"):
         await client.get_org_locations()
+    assert time.monotonic() - started < 1.0, "config error was retried, not raised"
 
 
 async def test_locations_list(cli, capsys):

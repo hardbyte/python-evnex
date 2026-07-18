@@ -15,7 +15,11 @@ from tenacity import (
 
 from evnex.auth import EvnexAuth, EvnexHttpxAuth
 from evnex.config import EvnexConfig
-from evnex.errors import EvnexAuthError, ReauthenticationRequiredError
+from evnex.errors import (
+    EvnexAuthError,
+    EvnexConfigurationError,
+    ReauthenticationRequiredError,
+)
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
@@ -61,6 +65,7 @@ except PackageNotFoundError:
 NON_RETRYABLE_EXCEPTIONS = (
     ValidationError,
     EvnexAuthError,
+    EvnexConfigurationError,
 )
 
 
@@ -173,7 +178,7 @@ class Evnex:
         """
         resolved = org_id or self.org_id
         if not resolved:
-            raise ValueError(
+            raise EvnexConfigurationError(
                 "No organisation id available: pass org_id, set EVNEX_ORG_ID, "
                 "or call get_user_detail() first to resolve the default org."
             )
