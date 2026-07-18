@@ -156,6 +156,25 @@ uvx evnex auth mfa enable            # enroll a TOTP device and turn MFA on
 uvx evnex auth mfa disable           # turn MFA off entirely
 uvx evnex auth change-password       # change your password (prompts)
 uvx evnex auth reset-password        # reset a forgotten password via email
+
+uvx evnex status                     # live view: connectors, power, sessions
+uvx evnex charge-points list         # id, name, serial, network status
+uvx evnex charge-points show         # detail for one charge point
+uvx evnex sessions list              # recent charging sessions
+uvx evnex insights                   # daily energy, cost, and session counts
+uvx evnex charge now                 # start charging immediately
+uvx evnex charge auto                # return to the configured schedule
+uvx evnex charge stop                # stop the active charging session
+uvx evnex schedule show              # the configured charging schedule
+```
+
+The resource commands pick the charge point automatically when the account has
+only one; otherwise select it with `--charge-point ID`, where `ID` is a charge
+point id or a part of its name or serial of its name or serial. Add `--json` to `status`,
+the listings, and `schedule show` for a machine-readable document on stdout:
+
+```shell
+uvx evnex status --json
 ```
 
 `evnex auth status` shows who you are signed in as (decoded from the cached
