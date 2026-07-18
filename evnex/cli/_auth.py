@@ -1,16 +1,8 @@
-"""Command line interface for the EVNEX Cloud API client.
+"""Authentication, MFA, and password commands, plus shared sign-in helpers.
 
-Run without installing anything via uv:
-
-    uvx evnex auth login
-    uvx evnex auth status
-    uvx evnex auth mfa enable
-    uvx evnex auth change-password
-    uvx evnex auth reset-password
-
-Credentials come from EVNEX_CLIENT_USERNAME / EVNEX_CLIENT_PASSWORD (or are
-prompted for). Session tokens are cached with 0600 permissions so an MFA
-sign-in is only needed occasionally, not per command.
+The interactive input()/getpass() prompts throughout this module block the
+event loop on purpose: this is a single-task CLI process, so there is no
+concurrent work for them to hold up.
 """
 
 from __future__ import annotations
@@ -23,23 +15,18 @@ import os
 import sys
 import tempfile
 import webbrowser
-from importlib.metadata import version
 from pathlib import Path
 
 import jwt
 
 from evnex.auth import AuthChallenge, EvnexAuth, TokenSet, TotpEnrollment
-from evnex.errors import EvnexAuthError, ReauthenticationRequiredError
+from evnex.errors import ReauthenticationRequiredError
 
 DEFAULT_CACHE = (
     Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
     / "evnex"
     / "tokens.json"
 )
-
-# The interactive input()/getpass() prompts throughout this module block the
-# event loop on purpose: this is a single-task CLI process, so there is no
-# concurrent work for them to hold up.
 
 
 def _default_cache() -> Path:
@@ -291,42 +278,12 @@ async def cmd_mfa_confirm(args: argparse.Namespace) -> None:
         print("TOTP device registered (MFA preference unchanged)")
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="evnex",
-        description="Command line interface for the EVNEX Cloud API.",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"evnex {version('evnex')}",
-    )
-    parser.set_defaults(func=None, print_group_help=parser.print_help)
-
-    # Flags for commands that read or write the token cache.
-    cache_flags = argparse.ArgumentParser(add_help=False)
-    cache_flags.add_argument(
-        "--token-cache",
-        type=Path,
-        default=_default_cache(),
-        help=f"where to cache session tokens (default: {_default_cache()})",
-    )
-    # Flags for commands that may need to answer a sign-in MFA challenge. Kept
-    # separate so commands that never sign in (logout) or need no session at
-    # all (reset-password) reject them instead of silently ignoring them.
-    otp_flags = argparse.ArgumentParser(add_help=False)
-    otp_flags.add_argument(
-        "--otp",
-        help="6-digit code to answer a sign-in MFA challenge non-interactively",
-    )
-    otp_flags.add_argument(
-        "--otp-command",
-        help="shell command printing a current MFA code, e.g. "
-        "'op item get Evnex --otp' with the 1Password CLI",
-    )
-
-    sub = parser.add_subparsers(dest="command")
-
+def add_auth_commands(
+    sub: argparse._SubParsersAction,
+    cache_flags: argparse.ArgumentParser,
+    otp_flags: argparse.ArgumentParser,
+) -> None:
+    """Attach the `auth` command group to the top-level subparsers."""
     auth = sub.add_parser(
         "auth",
         help="manage authentication and MFA for your EVNEX account",
@@ -443,25 +400,3 @@ def build_parser() -> argparse.ArgumentParser:
         help="register the device without changing the MFA preference",
     )
     confirm.set_defaults(func=cmd_mfa_confirm)
-
-    return parser
-
-
-def main(argv: list[str] | None = None) -> None:
-    args = build_parser().parse_args(argv)
-    handler = getattr(args, "func", None)
-    if handler is None:
-        # No (leaf) subcommand: print the most specific help and exit cleanly.
-        args.print_group_help()
-        sys.exit(0)
-    try:
-        asyncio.run(handler(args))
-    except EvnexAuthError as err:
-        print(f"Authentication error: {err}", file=sys.stderr)
-        sys.exit(1)
-    except KeyboardInterrupt:
-        sys.exit(130)
-
-
-if __name__ == "__main__":
-    main()

@@ -157,7 +157,7 @@ class TestPasswordMismatch:
         async def fake_signed_in(args):
             return FakeAuth()
 
-        monkeypatch.setattr("evnex.cli.signed_in_auth", fake_signed_in)
+        monkeypatch.setattr("evnex.cli._auth.signed_in_auth", fake_signed_in)
         prompts = iter(["current", "new-one", "new-two"])
         monkeypatch.setattr("getpass.getpass", lambda *a, **k: next(prompts))
 
@@ -178,7 +178,7 @@ class TestPasswordMismatch:
             async def confirm_password_reset(self, *args):
                 raise AssertionError("reset must not run after mismatch")
 
-        monkeypatch.setattr("evnex.cli.EvnexAuth", FakeAuth)
+        monkeypatch.setattr("evnex.cli._auth.EvnexAuth", FakeAuth)
         monkeypatch.setenv("EVNEX_CLIENT_USERNAME", "user@example.com")
         monkeypatch.setattr("builtins.input", lambda *a, **k: "123456")
         prompts = iter(["new-one", "new-two"])

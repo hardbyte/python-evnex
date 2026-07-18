@@ -24,6 +24,8 @@ class EvnexOrgInsightEntry(BaseModel):
     carbonUsage: float | None = None
     cost: EvnexCost
     duration: int
+    # Watt-hours, like all energy figures in this API (the official app
+    # and integrations render these via Wh sensors)
     powerUsage: float
     sessions: int
     startDate: datetime
