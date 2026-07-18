@@ -15,7 +15,11 @@ from tenacity import (
 
 from evnex.auth import EvnexAuth, EvnexHttpxAuth
 from evnex.config import EvnexConfig
-from evnex.errors import EvnexAuthError, ReauthenticationRequiredError
+from evnex.errors import (
+    EvnexAuthError,
+    EvnexConfigurationError,
+    ReauthenticationRequiredError,
+)
 from evnex.schema.charge_points import (
     EvnexChargePoint,
     EvnexChargePointDetail,
@@ -48,10 +52,7 @@ from evnex.schema.v3.charge_points import (
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
 from evnex.schema.v3.locations import EvnexGetLocationsResponse, EvnexLocation
-from evnex.schema.v3.org import (
-    EvnexConnectorSummary,
-    EvnexGetOrgConnectorSummaryResponse,
-)
+from evnex.schema.v3.org import EvnexGetOrgConnectorSummaryResponse
 
 logger = logging.getLogger("evnex.api")
 
@@ -64,6 +65,7 @@ except PackageNotFoundError:
 NON_RETRYABLE_EXCEPTIONS = (
     ValidationError,
     EvnexAuthError,
+    EvnexConfigurationError,
 )
 
 
@@ -167,12 +169,26 @@ class Evnex:
             )
             raise
 
+    def _resolve_org_id(self, org_id: str | None) -> str:
+        """Return the organisation id to use, falling back to the default.
+
+        The default comes from config (EVNEX_ORG_ID) or the user's first
+        organisation once get_user_detail has run. Raise if neither is set,
+        rather than emitting a request against a literal ``None`` in the path.
+        """
+        resolved = org_id or self.org_id
+        if not resolved:
+            raise EvnexConfigurationError(
+                "No organisation id available: pass org_id, set EVNEX_ORG_ID, "
+                "or call get_user_detail() first to resolve the default org."
+            )
+        return resolved
+
     @api_retry(HTTPStatusError)
     async def get_org_charge_points(
         self, org_id: str | None = None
     ) -> list[EvnexChargePoint]:
-        if org_id is None and self.org_id:
-            org_id = self.org_id
+        org_id = self._resolve_org_id(org_id)
         r = await self._request(
             "GET",
             f"/v2/apps/organisations/{org_id}/charge-points",
@@ -184,8 +200,7 @@ class Evnex:
     async def get_org_insight(
         self, days: int, org_id: str | None = None, tz_offset: int = 12
     ) -> list[EvnexOrgInsightEntry]:
-        if org_id is None and self.org_id:
-            org_id = self.org_id
+        org_id = self._resolve_org_id(org_id)
         r = await self._request(
             "GET",
             f"/organisations/{org_id}/summary/insights",
@@ -200,8 +215,7 @@ class Evnex:
     async def get_org_summary_status(
         self, org_id: str | None = None
     ) -> EvnexOrgSummaryStatus:
-        if org_id is None and self.org_id:
-            org_id = self.org_id
+        org_id = self._resolve_org_id(org_id)
         r = await self._request(
             "GET",
             f"/v2/apps/organisations/{org_id}/summary/status",
@@ -211,8 +225,7 @@ class Evnex:
 
     @api_retry(HTTPStatusError)
     async def get_org_locations(self, org_id: str | None = None) -> list[EvnexLocation]:
-        if org_id is None and self.org_id:
-            org_id = self.org_id
+        org_id = self._resolve_org_id(org_id)
         r = await self._request(
             "GET",
             f"/v2/apps/organisations/{org_id}/locations",
@@ -223,15 +236,15 @@ class Evnex:
     @api_retry()
     async def get_org_connector_summary(
         self, org_id: str | None = None
-    ) -> EvnexConnectorSummary:
+    ) -> EvnexOrgSummaryStatus:
         """Return per-status connector counts across the organisation.
 
         This wraps a newer endpoint than get_org_summary_status; the two report
         the same counts through different response shapes and coexist so callers
-        of either keep working.
+        of either keep working. Endpoint and response shape were captured from
+        the official web app (app.evnex.io) against a live account.
         """
-        if org_id is None and self.org_id:
-            org_id = self.org_id
+        org_id = self._resolve_org_id(org_id)
         r = await self._request(
             "GET",
             f"/organisations/{org_id}/summary/status",
@@ -395,8 +408,7 @@ class Evnex:
             this manifests as a httpx.ReadTimeout error. This will be raised immediately without retry.
 
         """
-        if org_id is None and self.org_id:
-            org_id = self.org_id
+        org_id = self._resolve_org_id(org_id)
         logger.info("Stopping charging session")
         r = await self._request(
             "POST",
