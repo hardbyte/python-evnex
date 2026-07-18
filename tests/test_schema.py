@@ -8,7 +8,7 @@ def test_user_without_name_validates():
     # The API omits the name field entirely for accounts that never set one
     payload = {
         "data": {
-            "id": "b102b5e3-2b00-4f6b-9b0c-b579c609f969",
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
             "createdDate": "2022-01-01T00:00:00Z",
             "updatedDate": "2022-01-01T00:00:00Z",
             "email": "user@example.com",

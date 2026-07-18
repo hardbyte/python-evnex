@@ -104,6 +104,82 @@ once, transparently. When the session truly can't be renewed, calls raise
 
 See `examples/get_token.py` for a complete sign-in and persistence flow.
 
+### Managing MFA devices
+
+The EVNEX app doesn't currently expose changing or removing your MFA device;
+the API does, and `EvnexAuth` wraps it (requires a signed-in session):
+
+```python
+status = await auth.get_mfa_status()          # which methods are enabled
+
+enrollment = await auth.begin_totp_enrollment()
+print(enrollment.provisioning_uri("you@example.com"))  # render as QR code
+await auth.confirm_totp_enrollment(code, device_name="New phone")
+await auth.set_mfa_preference(totp=True)      # turn TOTP on / make preferred
+
+await auth.set_mfa_preference()               # disable MFA entirely
+```
+
+Completing a new TOTP enrollment replaces the previously registered
+authenticator device.
+
+### Changing or resetting your password
+
+`EvnexAuth` also manages the account password:
+
+```python
+# Change the password of a signed-in account:
+await auth.change_password(current_password, new_password)
+
+# Reset a forgotten password (no session needed):
+destination = await auth.start_password_reset("you@example.com")  # masked email
+await auth.confirm_password_reset("you@example.com", emailed_code, new_password)
+```
+
+The CLI equivalents are `evnex auth change-password` (prompts for the current
+and new password) and `evnex auth reset-password` (sends a code to your email,
+then prompts for the code and a new password).
+
+## Command line
+
+Everything above is also available as a CLI, runnable directly with
+[uv](https://docs.astral.sh/uv/):
+
+```shell
+export EVNEX_CLIENT_USERNAME=you@example.com
+export EVNEX_CLIENT_PASSWORD=<your password>
+
+uvx evnex auth login                 # sign in (uses cached tokens when valid)
+uvx evnex auth status                # signed-in user, session, and MFA state
+uvx evnex auth logout                # forget the cached session
+uvx evnex auth mfa enable            # enroll a TOTP device and turn MFA on
+uvx evnex auth mfa disable           # turn MFA off entirely
+uvx evnex auth change-password       # change your password (prompts)
+uvx evnex auth reset-password        # reset a forgotten password via email
+```
+
+`evnex auth status` shows who you are signed in as (decoded from the cached
+token), when the session expires, and which MFA methods are enabled.
+
+`evnex auth mfa enable` is the interactive one-shot: it prints an `otpauth://`
+URI (paste it straight into a password manager's one-time password field),
+the bare secret, and a QR code, then asks for a code from the new device and
+makes TOTP the preferred method. For automation, the same flow is split into
+`evnex auth mfa enroll` (print the URI/secret/QR and exit) and
+`evnex auth mfa confirm CODE` (verify and enable; `--no-prefer` registers the
+device without changing the MFA preference). The QR code renders in the
+terminal, or in the browser with `--browser`.
+
+Session tokens are cached (mode 0600, `~/.cache/evnex/tokens.json` by default,
+or `EVNEX_TOKEN_CACHE`) so an MFA sign-in is only needed occasionally. To
+answer sign-in challenges from a password manager instead of typing codes —
+for example with the [1Password CLI](https://developer.1password.com/docs/cli/)
+v2+:
+
+```shell
+uvx evnex auth login --otp-command 'op item get Evnex --otp'
+```
+
 ## Examples
 
 `python-evnex` is intended as a library, but a few example scripts are provided in the `examples` folder.

@@ -16,8 +16,14 @@ dependencies = [
     "pydantic>2.0.0,<3.0.0",
     "tenacity>=8.1,<10.0",
     "pyjwt>=2.8,<3.0",
+    # QR rendering for the CLI; pure python, and uninstalling it is a
+    # supported opt-out (the CLI falls back to printing the otpauth URI)
+    "qrcode>=8.0",
     "pydantic-settings>=2.2,<3.0",
 ]
+
+[project.scripts]
+evnex = "evnex.cli:main"
 
 [dependency-groups]
 dev = [

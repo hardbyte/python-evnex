@@ -17,7 +17,8 @@ import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, TypeVar
+from urllib.parse import quote
 
 import botocore.exceptions
 import httpx
@@ -50,6 +51,8 @@ CHALLENGE_SMS_MFA = "SMS_MFA"
 EXPIRY_SKEW = timedelta(seconds=30)
 
 TokenUpdateCallback = Callable[["TokenSet"], Awaitable[None]]
+
+_T = TypeVar("_T")
 
 # Sentinel distinguishing "always refresh" from "refresh unless the tokens
 # already rotated past this stale access token (which may be None)"
@@ -133,6 +136,31 @@ class AuthChallenge:
             username=data["username"],
             parameters=dict(data.get("parameters") or {}),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TotpEnrollment:
+    """A pending TOTP device enrollment: load the secret, then confirm."""
+
+    secret: str = field(repr=False)
+
+    def provisioning_uri(self, account_name: str, issuer: str = "Evnex") -> str:
+        """An otpauth:// URI for QR rendering or a password manager's OTP field.
+
+        Matches the label/issuer conventions of EVNEX's own enrollment.
+        """
+        return (
+            f"otpauth://totp/{quote(account_name)}"
+            f"?secret={self.secret}&issuer={quote(issuer)}"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MfaStatus:
+    """The MFA methods currently enabled for an account."""
+
+    enabled: tuple[str, ...]
+    preferred: str | None = None
 
 
 class EvnexAuth:
@@ -335,6 +363,240 @@ class EvnexAuth:
                 raise ReauthenticationRequiredError(str(err)) from err
             await self._store_tokens(tokens)
             return tokens
+
+    async def _run_user_pool_op(
+        self,
+        operation: Callable[[str], _T],
+        *,
+        after: Callable[[_T], Awaitable[None]] | None = None,
+    ) -> _T:
+        """Run a Cognito user-pool call, recovering from server-side revocation.
+
+        operation is a synchronous callable given the resolved access token;
+        it runs in a worker thread while the lock is held, so it may touch the
+        shared Cognito instance. If Cognito rejects the token with
+        NotAuthorizedException — which get_access_token's local expiry check
+        cannot detect — the session is refreshed and the call retried exactly
+        once; a second failure propagates the ClientError for the caller's own
+        error mapping.
+
+        after, if given, runs under the same lock as the successful call (so
+        change_password can publish rotated tokens captured during it).
+
+        force_refresh acquires self._lock, so the refresh happens outside the
+        locked section: the loop alternates lock-held attempts with unlocked
+        refreshes rather than nesting the two.
+        """
+        access_token = await self.get_access_token()
+        refreshed_once = False
+        while True:
+            async with self._lock:
+                try:
+                    result = await asyncio.to_thread(operation, access_token)
+                except botocore.exceptions.ClientError as err:
+                    code = err.response.get("Error", {}).get("Code", "")
+                    if refreshed_once or code != "NotAuthorizedException":
+                        raise
+                else:
+                    if after is not None:
+                        await after(result)
+                    return result
+            refreshed_once = True
+            refreshed = await self.force_refresh(stale_access_token=access_token)
+            access_token = self._require_access_token(refreshed)
+
+    async def get_mfa_status(self) -> MfaStatus:
+        """Report which MFA methods are enabled for the signed-in account."""
+
+        def _get_user(access_token: str) -> MfaStatus:
+            cognito = self._ensure_cognito()
+            response = cognito.client.get_user(AccessToken=access_token)
+            return MfaStatus(
+                enabled=tuple(response.get("UserMFASettingList") or ()),
+                preferred=response.get("PreferredMfaSetting"),
+            )
+
+        try:
+            return await self._run_user_pool_op(_get_user)
+        except botocore.exceptions.ClientError as err:
+            raise EvnexAuthError(_error_message(err)) from err
+
+    async def begin_totp_enrollment(self) -> TotpEnrollment:
+        """Start enrolling a (new) TOTP authenticator device.
+
+        Returns the shared secret to load into the authenticator — via QR
+        code (see TotpEnrollment.provisioning_uri) or manual entry — then
+        confirm with confirm_totp_enrollment(). Completing enrollment
+        replaces any previously registered TOTP device.
+        """
+
+        def _associate(access_token: str) -> TotpEnrollment:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            return TotpEnrollment(secret=cognito.associate_software_token())
+
+        try:
+            return await self._run_user_pool_op(_associate)
+        except botocore.exceptions.ClientError as err:
+            raise EvnexAuthError(_error_message(err)) from err
+
+    async def confirm_totp_enrollment(self, code: str, device_name: str = "") -> None:
+        """Verify a code from the newly enrolled authenticator device.
+
+        Note this registers the device but does not turn MFA on for the
+        account; call set_mfa_preference(totp=True) as well when first
+        enabling MFA.
+
+        :raises InvalidChallengeResponseError: the code was rejected
+        """
+
+        def _verify(access_token: str) -> bool:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            return bool(cognito.verify_software_token(code.strip(), device_name))
+
+        try:
+            verified = await self._run_user_pool_op(_verify)
+        except botocore.exceptions.ClientError as err:
+            code_name = err.response.get("Error", {}).get("Code", "")
+            if code_name in (
+                "CodeMismatchException",
+                "EnableSoftwareTokenMFAException",
+            ):
+                raise InvalidChallengeResponseError(_error_message(err)) from err
+            raise EvnexAuthError(_error_message(err)) from err
+        if not verified:
+            raise InvalidChallengeResponseError("The code was not accepted")
+
+    async def set_mfa_preference(
+        self,
+        *,
+        totp: bool = False,
+        sms: bool = False,
+        preferred: str | None = None,
+    ) -> None:
+        """Enable, disable, or reprioritise MFA methods for the account.
+
+        With both flags False, MFA is disabled entirely (where the user
+        pool allows it). preferred is "SMS" or "SOFTWARE_TOKEN"; it may be
+        omitted when only one method is enabled.
+
+        :raises ValueError: both methods are enabled but no preferred one is
+            given — a preference is required to break the tie
+        """
+        if preferred is None and (totp ^ sms):
+            preferred = "SOFTWARE_TOKEN" if totp else "SMS"
+        if totp and sms and preferred is None:
+            raise ValueError(
+                "preferred is required when enabling both TOTP and SMS MFA; "
+                'pass preferred="SOFTWARE_TOKEN" or preferred="SMS"'
+            )
+
+        def _set_preference(access_token: str) -> None:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            cognito.set_user_mfa_preference(
+                sms_mfa=sms, software_token_mfa=totp, preferred=preferred
+            )
+
+        try:
+            await self._run_user_pool_op(_set_preference)
+        except botocore.exceptions.ClientError as err:
+            raise EvnexAuthError(_error_message(err)) from err
+
+    async def change_password(self, current_password: str, new_password: str) -> None:
+        """Change the password of the signed-in account.
+
+        Requires a usable session.
+
+        :raises InvalidCredentialsError: the current password was wrong
+        :raises EvnexAuthError: the new password was rejected, or a rate
+            limit was hit
+        """
+
+        def _change(access_token: str) -> TokenSet | None:
+            cognito = self._ensure_cognito()
+            cognito.access_token = access_token
+            current = self._tokens
+            cognito.id_token = current.id_token if current else None
+            cognito.refresh_token = current.refresh_token if current else None
+            cognito.change_password(current_password, new_password)
+            # pycognito's change_password runs check_token(renew=True), which
+            # can rotate tokens on the Cognito object; capture the rotation
+            # here — under the same lock as the call — so it is published
+            # rather than silently dropped.
+            if cognito.access_token != access_token:
+                return self._tokens_from_cognito(cognito)
+            return None
+
+        async def _publish(rotated: TokenSet | None) -> None:
+            if rotated is not None:
+                await self._store_tokens(rotated)
+
+        try:
+            await self._run_user_pool_op(_change, after=_publish)
+        except botocore.exceptions.ClientError as err:
+            code = err.response.get("Error", {}).get("Code", "")
+            if code == "NotAuthorizedException":
+                raise InvalidCredentialsError(_error_message(err)) from err
+            raise EvnexAuthError(_error_message(err)) from err
+
+    async def start_password_reset(self, username: str) -> str:
+        """Begin the forgot-password flow, sending a reset code to the user.
+
+        Needs no session. Returns a human-readable description of where the
+        code was delivered (e.g. a masked email address), or "" if the
+        server did not report a destination. Complete the reset with
+        confirm_password_reset().
+
+        :raises EvnexAuthError: the request was rejected (e.g. a rate limit)
+        """
+
+        def _start() -> str:
+            cognito = self._ensure_cognito()
+            cognito.username = username
+            # pycognito's initiate_forgot_password discards the boto3
+            # response, so call forgot_password directly to read the
+            # delivery details. This client has no secret, so no SECRET_HASH
+            # is required.
+            response = cognito.client.forgot_password(
+                ClientId=self._config.EVNEX_COGNITO_CLIENT_ID,
+                Username=username,
+            )
+            delivery = response.get("CodeDeliveryDetails") or {}
+            return str(delivery.get("Destination") or "")
+
+        async with self._lock:
+            try:
+                return await asyncio.to_thread(_start)
+            except botocore.exceptions.ClientError as err:
+                raise EvnexAuthError(_error_message(err)) from err
+
+    async def confirm_password_reset(
+        self, username: str, code: str, new_password: str
+    ) -> None:
+        """Complete the forgot-password flow with the emailed/texted code.
+
+        :raises InvalidChallengeResponseError: the reset code was wrong
+        :raises ChallengeExpiredError: the reset code expired
+        :raises EvnexAuthError: the new password was rejected
+        """
+
+        def _confirm() -> None:
+            cognito = self._ensure_cognito()
+            cognito.username = username
+            cognito.confirm_forgot_password(code.strip(), new_password)
+
+        async with self._lock:
+            try:
+                await asyncio.to_thread(_confirm)
+            except botocore.exceptions.ClientError as err:
+                code_name = err.response.get("Error", {}).get("Code", "")
+                if code_name == "CodeMismatchException":
+                    raise InvalidChallengeResponseError(_error_message(err)) from err
+                if code_name == "ExpiredCodeException":
+                    raise ChallengeExpiredError(_error_message(err)) from err
+                raise EvnexAuthError(_error_message(err)) from err
 
     def _ensure_cognito(self) -> Cognito:
         """Build the pycognito client on first use.

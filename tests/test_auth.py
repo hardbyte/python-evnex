@@ -35,7 +35,7 @@ USER_URL = "https://client-api.evnex.io/v2/apps/user"
 
 USER_PAYLOAD = {
     "data": {
-        "id": "b102b5e3-2b00-4f6b-9b0c-b579c609f969",
+        "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
         "createdDate": "2022-01-01T00:00:00Z",
         "updatedDate": "2022-01-01T00:00:00Z",
         "name": "Test User",
@@ -453,3 +453,159 @@ class TestErrorSurfaces:
             username="user@example.com",
         )
         assert "user@example.com" not in repr(challenge)
+
+
+class TestMfaManagement:
+    async def test_mfa_status(self, resumed_auth):
+        status = await resumed_auth.get_mfa_status()
+
+        assert status.enabled == ("SOFTWARE_TOKEN_MFA",)
+        assert status.preferred == "SOFTWARE_TOKEN_MFA"
+
+    async def test_totp_enrollment_flow(self, resumed_auth):
+        enrollment = await resumed_auth.begin_totp_enrollment()
+
+        assert enrollment.secret == "FAKESECRETBASE32"
+        uri = enrollment.provisioning_uri("user@example.com")
+        assert uri.startswith("otpauth://totp/user%40example.com?")
+        assert "issuer=Evnex" in uri
+        assert "secret=FAKESECRETBASE32" in uri
+        assert "secret" not in repr(enrollment).lower() or "FAKESECRET" not in repr(
+            enrollment
+        )
+
+        await resumed_auth.confirm_totp_enrollment("123456", "New phone")
+        resumed_auth._cognito.verify_software_token.assert_called_once_with(
+            "123456", "New phone"
+        )
+
+    async def test_confirm_with_wrong_code(self, resumed_auth):
+        await resumed_auth.begin_totp_enrollment()  # builds the fake cognito
+        resumed_auth._cognito.verify_software_token.side_effect = client_error(
+            "EnableSoftwareTokenMFAException", "Code mismatch"
+        )
+
+        with pytest.raises(InvalidChallengeResponseError):
+            await resumed_auth.confirm_totp_enrollment("000000")
+
+    async def test_disable_mfa(self, resumed_auth):
+        await resumed_auth.set_mfa_preference(totp=False, sms=False)
+
+        resumed_auth._cognito.set_user_mfa_preference.assert_called_once_with(
+            sms_mfa=False, software_token_mfa=False, preferred=None
+        )
+
+    async def test_single_method_is_preferred_automatically(self, resumed_auth):
+        await resumed_auth.set_mfa_preference(totp=True)
+
+        resumed_auth._cognito.set_user_mfa_preference.assert_called_once_with(
+            sms_mfa=False, software_token_mfa=True, preferred="SOFTWARE_TOKEN"
+        )
+
+    async def test_both_methods_without_preferred_raises_valueerror(self, resumed_auth):
+        await resumed_auth.set_mfa_preference(totp=True)  # builds the fake cognito
+        resumed_auth._cognito.set_user_mfa_preference.reset_mock()
+
+        with pytest.raises(ValueError, match="preferred is required"):
+            await resumed_auth.set_mfa_preference(totp=True, sms=True)
+
+        # The misuse is caught by us; pycognito is never reached
+        resumed_auth._cognito.set_user_mfa_preference.assert_not_called()
+
+    async def test_revoked_access_token_refreshes_and_retries_once(self, resumed_auth):
+        await resumed_auth.set_mfa_preference(totp=True)  # builds the fake cognito
+        resumed_auth._cognito.set_user_mfa_preference.reset_mock()
+        resumed_auth._cognito.renew_access_token.reset_mock()
+        # A server-side revocation the local expiry check cannot see: reject
+        # the first call, then accept the retry with the refreshed token
+        resumed_auth._cognito.set_user_mfa_preference.side_effect = [
+            client_error("NotAuthorizedException", "Access Token has been revoked"),
+            None,
+        ]
+
+        await resumed_auth.set_mfa_preference(totp=True)
+
+        assert resumed_auth._cognito.set_user_mfa_preference.call_count == 2
+        resumed_auth._cognito.renew_access_token.assert_called_once()
+
+    async def test_persistent_revocation_propagates_after_one_retry(self, resumed_auth):
+        await resumed_auth.get_mfa_status()  # builds the fake cognito
+        resumed_auth._cognito.client.get_user.reset_mock()
+        resumed_auth._cognito.renew_access_token.reset_mock()
+        resumed_auth._cognito.client.get_user.side_effect = client_error(
+            "NotAuthorizedException", "Access Token has been revoked"
+        )
+
+        with pytest.raises(EvnexAuthError):
+            await resumed_auth.get_mfa_status()
+
+        # Retried exactly once, then the mapped error surfaces
+        assert resumed_auth._cognito.client.get_user.call_count == 2
+        resumed_auth._cognito.renew_access_token.assert_called_once()
+
+
+class TestPasswordManagement:
+    async def test_change_password(self, resumed_auth):
+        await resumed_auth.change_password("oldpass", "newpass")
+
+        resumed_auth._cognito.change_password.assert_called_once_with(
+            "oldpass", "newpass"
+        )
+
+    async def test_change_password_wrong_current(self, resumed_auth):
+        await resumed_auth.change_password("oldpass", "newpass")  # builds the fake
+        resumed_auth._cognito.change_password.side_effect = client_error(
+            "NotAuthorizedException", "Incorrect username or password."
+        )
+
+        with pytest.raises(InvalidCredentialsError):
+            await resumed_auth.change_password("wrongpass", "newpass")
+
+    async def test_change_password_invalid_new(self, resumed_auth):
+        await resumed_auth.change_password("oldpass", "newpass")  # builds the fake
+        resumed_auth._cognito.change_password.side_effect = client_error(
+            "InvalidPasswordException", "Password does not conform to policy"
+        )
+
+        with pytest.raises(EvnexAuthError, match="conform"):
+            await resumed_auth.change_password("oldpass", "weak")
+
+    async def test_start_password_reset_returns_destination(self, auth):
+        destination = await auth.start_password_reset("user@example.com")
+
+        assert destination == "b***@e***"
+        auth._cognito.client.forgot_password.assert_called_once()
+
+    async def test_confirm_password_reset(self, auth):
+        await auth.confirm_password_reset("user@example.com", "123456", "newpass")
+
+        auth._cognito.confirm_forgot_password.assert_called_once_with(
+            "123456", "newpass"
+        )
+
+    async def test_confirm_password_reset_wrong_code(self, auth):
+        await auth.start_password_reset("user@example.com")  # builds the fake
+        auth._cognito.confirm_forgot_password.side_effect = client_error(
+            "CodeMismatchException", "Invalid verification code provided"
+        )
+
+        with pytest.raises(InvalidChallengeResponseError):
+            await auth.confirm_password_reset("user@example.com", "000000", "newpass")
+
+    async def test_confirm_password_reset_expired_code(self, auth):
+        await auth.start_password_reset("user@example.com")  # builds the fake
+        auth._cognito.confirm_forgot_password.side_effect = client_error(
+            "ExpiredCodeException", "Invalid code provided, please request a code again"
+        )
+
+        with pytest.raises(ChallengeExpiredError):
+            await auth.confirm_password_reset("user@example.com", "123456", "newpass")
+
+    async def test_confirm_password_reset_invalid_new(self, auth):
+        await auth.start_password_reset("user@example.com")  # builds the fake
+        auth._cognito.confirm_forgot_password.side_effect = client_error(
+            "InvalidPasswordException", "Password does not conform to policy"
+        )
+
+        with pytest.raises(EvnexAuthError, match="conform"):
+            await auth.confirm_password_reset("user@example.com", "123456", "weak")
