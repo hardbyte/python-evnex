@@ -161,6 +161,7 @@ uvx evnex status                     # live view: connectors, power, sessions
 uvx evnex charge-points list         # id, name, serial, network status
 uvx evnex charge-points show         # detail for one charge point
 uvx evnex sessions list              # recent charging sessions
+uvx evnex locations list             # name, city, ICP number, retailer, timezone
 uvx evnex insights                   # daily energy, cost, and session counts
 uvx evnex charge now                 # start charging immediately
 uvx evnex charge auto                # return to the configured schedule
