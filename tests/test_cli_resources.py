@@ -24,6 +24,8 @@ from evnex.schema.v3.charge_points import (
 )
 from evnex.schema.v3.charge_points import EvnexGetChargePointSessionsResponse
 from evnex.schema.v3.generic import EvnexV3APIResponse
+from evnex.schema.v3.locations import EvnexGetLocationsResponse
+from evnex.schema.v3.org import EvnexGetOrgConnectorSummaryResponse
 
 BASE = "https://client-api.evnex.io"
 USER_URL = f"{BASE}/v2/apps/user"
@@ -31,6 +33,8 @@ CP_URL = f"{BASE}/v2/apps/organisations/org-0000/charge-points"
 DETAIL_URL = f"{BASE}/charge-points/cp-0000001"
 SESSIONS_URL = f"{BASE}/charge-points/cp-0000001/sessions"
 INSIGHTS_URL = f"{BASE}/organisations/org-0000/summary/insights"
+LOCATIONS_URL = f"{BASE}/v2/apps/organisations/org-0000/locations"
+CONNECTOR_SUMMARY_URL = f"{BASE}/organisations/org-0000/summary/status"
 OVERRIDE_URL = f"{BASE}/charge-points/cp-0000001/commands/set-override"
 STOP_URL = (
     f"{BASE}/v2/apps/organisations/org-0000"
@@ -257,6 +261,75 @@ INSIGHTS_PAYLOAD = {
 }
 
 
+LOCATIONS_PAYLOAD = {
+    "data": [
+        {
+            "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "type": "locations",
+            "attributes": {
+                "name": "Home",
+                "address": {
+                    "address1": "1 Test Street",
+                    "address2": "",
+                    "city": "Wellington",
+                    "postCode": "6011",
+                    "state": "",
+                    "country": "NZ",
+                },
+                "coordinates": {"latitude": "-41.2865", "longitude": "174.7762"},
+                "isPublic": False,
+                "updated": "2024-06-01T00:00:00Z",
+                "created": "2024-01-01T00:00:00Z",
+                "icpNumber": "0000123456UN789",
+                "icpDetails": {
+                    "electricityRetailer": "Example Energy",
+                    "electricityDistributor": "Example Networks",
+                    "networkConnectionPoint": "EXP0001",
+                },
+                "timeZone": "Pacific/Auckland",
+            },
+            "relationships": {
+                "chargePoints": {"data": [{"type": "chargePoint", "id": "cp-0000001"}]},
+                "organisation": {"data": None},
+                "users": {"data": []},
+            },
+        }
+    ],
+    # Full charge point objects the client does not model; kept to prove the
+    # response validates with them present.
+    "included": [
+        {
+            "id": "cp-0000001",
+            "type": "chargePoint",
+            "attributes": {"name": "Garage Charger"},
+        }
+    ],
+}
+
+# A location on an account that has not filled in address or ICP details.
+LOCATION_MINIMAL = {
+    "id": "3fa85f64-5717-4562-b3fc-2c963f66afa7",
+    "type": "locations",
+    "attributes": {"name": "Depot"},
+}
+
+CONNECTOR_SUMMARY_PAYLOAD = {
+    "data": {
+        "attributes": {
+            "connectors": {
+                "available": 3,
+                "charging": 1,
+                "disabled": 0,
+                "faulted": 0,
+                "occupied": 1,
+                "offline": 2,
+                "reserved": 0,
+            }
+        }
+    }
+}
+
+
 @pytest.fixture
 def cli(resumed_auth, monkeypatch):
     """Patch sign-in so resource handlers use the offline resumed session."""
@@ -297,6 +370,17 @@ def test_fixtures_validate_against_models():
     assert sessions.data[0].attributes.endDate is None
     insights = EvnexGetOrgInsights.model_validate(INSIGHTS_PAYLOAD)
     assert insights.data[0].attributes.sessions == 1
+    locations = EvnexGetLocationsResponse.model_validate(LOCATIONS_PAYLOAD)
+    assert locations.data[0].attributes.address.city == "Wellington"
+    assert locations.data[0].relationships.chargePoints.data[0].id == "cp-0000001"
+    # A location missing its optional sub-objects still validates
+    minimal = EvnexGetLocationsResponse.model_validate({"data": [LOCATION_MINIMAL]})
+    assert minimal.data[0].attributes.address is None
+    assert minimal.data[0].relationships.chargePoints.data == []
+    summary = EvnexGetOrgConnectorSummaryResponse.model_validate(
+        CONNECTOR_SUMMARY_PAYLOAD
+    )
+    assert summary.data.attributes.connectors.available == 3
 
 
 # --- Parser wiring --------------------------------------------------------
@@ -316,6 +400,8 @@ def test_fixtures_validate_against_models():
             "cmd_sessions_list",
             ["sessions", "list", "--charge-point", "cp-1", "--limit", "5", "--json"],
         ),
+        ("cmd_locations_list", ["locations", "list"]),
+        ("cmd_locations_list", ["locations", "list", "--json"]),
         ("cmd_insights", ["insights"]),
         ("cmd_insights", ["insights", "--days", "14", "--json"]),
         ("cmd_charge_now", ["charge", "now", "--charge-point", "cp-1"]),
@@ -529,6 +615,72 @@ async def test_insights(cli, capsys):
     assert "2024-06-10" in out
     assert "1.00 kWh" in out
     assert "1.50 NZD" in out
+
+
+async def test_get_org_locations_returns_data_objects(client):
+    with respx.mock:
+        respx.get(LOCATIONS_URL).mock(
+            return_value=httpx.Response(200, json=LOCATIONS_PAYLOAD)
+        )
+        locations = await client.get_org_locations(org_id="org-0000")
+
+    assert locations[0].id == "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    assert locations[0].attributes.name == "Home"
+    assert locations[0].attributes.address.city == "Wellington"
+    assert locations[0].relationships.chargePoints.data[0].id == "cp-0000001"
+
+
+async def test_get_org_connector_summary(client):
+    with respx.mock:
+        respx.get(CONNECTOR_SUMMARY_URL).mock(
+            return_value=httpx.Response(200, json=CONNECTOR_SUMMARY_PAYLOAD)
+        )
+        summary = await client.get_org_connector_summary(org_id="org-0000")
+
+    assert summary.available == 3
+    assert summary.charging == 1
+    assert summary.offline == 2
+
+
+async def test_locations_list(cli, capsys):
+    with respx.mock:
+        respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
+        respx.get(LOCATIONS_URL).mock(
+            return_value=httpx.Response(200, json=LOCATIONS_PAYLOAD)
+        )
+        await run(["locations", "list"])
+
+    out = capsys.readouterr().out
+    assert "Home" in out
+    assert "Wellington" in out
+    assert "0000123456UN789" in out
+    assert "Example Energy" in out
+    assert "Pacific/Auckland" in out
+
+
+async def test_locations_list_json_is_the_only_thing_on_stdout(cli, capsys):
+    with respx.mock:
+        respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
+        respx.get(LOCATIONS_URL).mock(
+            return_value=httpx.Response(200, json=LOCATIONS_PAYLOAD)
+        )
+        await run(["locations", "list", "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["id"] == "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    assert payload[0]["attributes"]["name"] == "Home"
+
+
+async def test_locations_list_handles_missing_address(cli, capsys):
+    payload = {"data": [LOCATION_MINIMAL]}
+    with respx.mock:
+        respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
+        respx.get(LOCATIONS_URL).mock(return_value=httpx.Response(200, json=payload))
+        await run(["locations", "list"])
+
+    out = capsys.readouterr().out
+    # Renders with dashes for the missing fields, no crash
+    assert "Depot" in out
 
 
 async def test_charge_now_sends_override(cli, capsys):

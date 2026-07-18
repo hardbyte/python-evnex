@@ -23,6 +23,7 @@ from evnex.api import Evnex
 from evnex.cli._auth import signed_in_auth
 from evnex.schema.charge_points import EvnexChargePoint
 from evnex.schema.v3.charge_points import EvnexChargePointSession
+from evnex.schema.v3.locations import EvnexLocation
 
 
 def _positive_int(value: str) -> int:
@@ -279,6 +280,39 @@ async def cmd_sessions_list(args: argparse.Namespace) -> None:
         _print_table(["Start", "End", "Energy", "Cost"], rows)
 
 
+async def cmd_locations_list(args: argparse.Namespace) -> None:
+    async with open_client(args) as client:
+        await client.get_user_detail()
+        # The retry decorator erases the annotated return type to Any; pin it back.
+        locations: list[EvnexLocation] = await client.get_org_locations()
+
+        if args.json:
+            print(
+                json.dumps([loc.model_dump(mode="json") for loc in locations], indent=2)
+            )
+            return
+
+        rows = []
+        for location in locations:
+            attributes = location.attributes
+            city = attributes.address.city if attributes.address else None
+            retailer = (
+                attributes.icpDetails.electricityRetailer
+                if attributes.icpDetails
+                else None
+            )
+            rows.append(
+                [
+                    attributes.name,
+                    city or "-",
+                    attributes.icpNumber or "-",
+                    retailer or "-",
+                    attributes.timeZone or "-",
+                ]
+            )
+        _print_table(["Name", "City", "ICP", "Retailer", "Timezone"], rows)
+
+
 async def cmd_insights(args: argparse.Namespace) -> None:
     async with open_client(args) as client:
         await client.get_user_detail()
@@ -447,6 +481,21 @@ def add_resource_commands(
         help="maximum number of sessions to show (default 10)",
     )
     sessions_list.set_defaults(func=cmd_sessions_list)
+
+    locations = sub.add_parser(
+        "locations",
+        help="list locations",
+        description="List the organisation's locations.",
+    )
+    locations.set_defaults(print_group_help=locations.print_help)
+    locations_sub = locations.add_subparsers(dest="locations_command")
+
+    locations_list = locations_sub.add_parser(
+        "list",
+        parents=[json_flag, *sign_in],
+        help="list locations (name, city, ICP number, retailer, timezone)",
+    )
+    locations_list.set_defaults(func=cmd_locations_list)
 
     insights = sub.add_parser(
         "insights",

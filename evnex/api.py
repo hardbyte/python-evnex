@@ -47,6 +47,11 @@ from evnex.schema.v3.charge_points import (
 )
 from evnex.schema.v3.commands import EvnexCommandResponse as EvnexCommandResponseV3
 from evnex.schema.v3.generic import EvnexV3APIResponse
+from evnex.schema.v3.locations import EvnexGetLocationsResponse, EvnexLocation
+from evnex.schema.v3.org import (
+    EvnexConnectorSummary,
+    EvnexGetOrgConnectorSummaryResponse,
+)
 
 logger = logging.getLogger("evnex.api")
 
@@ -203,6 +208,38 @@ class Evnex:
         )
         json_data = await self._check_api_response(r)
         return EvnexGetOrgSummaryStatusResponse.model_validate(json_data).data
+
+    @api_retry(HTTPStatusError)
+    async def get_org_locations(self, org_id: str | None = None) -> list[EvnexLocation]:
+        if org_id is None and self.org_id:
+            org_id = self.org_id
+        r = await self._request(
+            "GET",
+            f"/v2/apps/organisations/{org_id}/locations",
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexGetLocationsResponse.model_validate(json_data).data
+
+    @api_retry()
+    async def get_org_connector_summary(
+        self, org_id: str | None = None
+    ) -> EvnexConnectorSummary:
+        """Return per-status connector counts across the organisation.
+
+        This wraps a newer endpoint than get_org_summary_status; the two report
+        the same counts through different response shapes and coexist so callers
+        of either keep working.
+        """
+        if org_id is None and self.org_id:
+            org_id = self.org_id
+        r = await self._request(
+            "GET",
+            f"/organisations/{org_id}/summary/status",
+        )
+        json_data = await self._check_api_response(r)
+        return EvnexGetOrgConnectorSummaryResponse.model_validate(
+            json_data
+        ).data.attributes.connectors
 
     @api_retry()
     async def get_charge_point_detail(
