@@ -642,6 +642,14 @@ async def test_get_org_connector_summary(client):
     assert summary.offline == 2
 
 
+async def test_org_method_without_org_id_raises(client):
+    # No org_id argument and no default resolved yet: fail clearly rather than
+    # requesting a path with a literal "None" in it.
+    client.org_id = None
+    with pytest.raises(ValueError, match="No organisation id"):
+        await client.get_org_locations()
+
+
 async def test_locations_list(cli, capsys):
     with respx.mock:
         respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
