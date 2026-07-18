@@ -1,18 +1,12 @@
 from pydantic import BaseModel
 
-
-class EvnexConnectorSummary(BaseModel):
-    available: int
-    charging: int
-    disabled: int
-    faulted: int
-    occupied: int
-    offline: int
-    reserved: int
+from evnex.schema.org import EvnexOrgSummaryStatus
 
 
 class EvnexOrgConnectorSummaryAttributes(BaseModel):
-    connectors: EvnexConnectorSummary
+    # Same per-status connector counts as the flat EvnexOrgSummaryStatus, just
+    # nested one level deeper in this endpoint's JSON:API-style response.
+    connectors: EvnexOrgSummaryStatus
 
 
 class EvnexOrgConnectorSummaryData(BaseModel):
