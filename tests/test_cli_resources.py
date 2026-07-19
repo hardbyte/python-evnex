@@ -656,6 +656,43 @@ async def test_org_method_without_org_id_raises(client):
     assert time.monotonic() - started < 1.0, "config error was retried, not raised"
 
 
+async def test_get_user_detail_preserves_configured_org(client):
+    # A configured EVNEX_ORG_ID (already on the client) must survive sign-in
+    # rather than being clobbered by the account's first organisation.
+    client.org_id = "configured-org"
+    with respx.mock:
+        respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
+        await client.get_user_detail()
+    assert client.org_id == "configured-org"
+
+
+async def test_get_user_detail_defaults_org_when_unset(client):
+    client.org_id = None
+    with respx.mock:
+        respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
+        await client.get_user_detail()
+    assert client.org_id == "org-0000"
+
+
+async def test_challenge_code_prompts_on_stderr(monkeypatch, capsys):
+    # The MFA prompt must go to stderr so a --json command's stdout stays pure.
+    import argparse
+
+    from evnex.auth import AuthChallenge
+    from evnex.cli._auth import _challenge_code
+
+    monkeypatch.setattr("builtins.input", lambda *a: "123456")
+    args = argparse.Namespace(otp=None, otp_command=None)
+    challenge = AuthChallenge(
+        name="SOFTWARE_TOKEN_MFA", session="s", username="user@example.com"
+    )
+    code = await _challenge_code(args, challenge)
+    captured = capsys.readouterr()
+    assert code == "123456"
+    assert captured.out == ""
+    assert "Enter the 6-digit code" in captured.err
+
+
 async def test_locations_list(cli, capsys):
     with respx.mock:
         respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))

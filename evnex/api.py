@@ -139,8 +139,9 @@ class Evnex:
         response_json = await self._check_api_response(response)
         data = EvnexGetUserResponse.model_validate(response_json).data
 
-        # Make the assumption that most end users are only in one org
-        if len(data.organisations):
+        # Default to the user's first org, but never override an org_id that
+        # was configured explicitly (EVNEX_ORG_ID) or already resolved.
+        if self.org_id is None and data.organisations:
             self.org_id = data.organisations[0].id
 
         return data
