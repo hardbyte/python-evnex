@@ -702,6 +702,22 @@ async def test_challenge_code_prompts_on_stderr(monkeypatch, capsys):
     assert "Enter the 6-digit code" in captured.err
 
 
+async def test_set_override_fails_fast_on_timeout(client):
+    # A command that times out must fail fast (charge point unresponsive),
+    # not retry-storm through the backoff policy.
+    with respx.mock:
+        route = respx.post(OVERRIDE_URL).mock(
+            side_effect=httpx.ReadTimeout("charge point offline")
+        )
+        started = time.monotonic()
+        with pytest.raises(httpx.ReadTimeout):
+            await client.set_charge_point_override(
+                charge_point_id="cp-0000001", charge_now=True
+            )
+        assert route.call_count == 1, "command was retried instead of failing fast"
+        assert time.monotonic() - started < 1.0
+
+
 async def test_locations_list(cli, capsys):
     with respx.mock:
         respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))

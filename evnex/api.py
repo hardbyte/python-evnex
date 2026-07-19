@@ -317,14 +317,19 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig.model_validate(json_data)
 
-    @api_retry(HTTPStatusError)
+    @api_retry(HTTPStatusError, ReadTimeout)
     async def set_charge_point_override(
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
     ):
+        # A ReadTimeout means the charge point did not acknowledge the command
+        # in time (typically offline or not responding); fail fast rather than
+        # retrying, which only prolongs the hang and could resubmit the command.
+        # Matches stop_charge_point's policy for the same reason.
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/set-override",
             json={"connectorId": connector_id, "chargeNow": charge_now},
+            timeout=10,
         )
         self._ensure_success(r)
         return True
