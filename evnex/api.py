@@ -140,8 +140,9 @@ class Evnex:
         data = EvnexGetUserResponse.model_validate(response_json).data
 
         # Default to the user's first org, but never override an org_id that
-        # was configured explicitly (EVNEX_ORG_ID) or already resolved.
-        if self.org_id is None and data.organisations:
+        # was configured explicitly (EVNEX_ORG_ID) or already resolved. A blank
+        # EVNEX_ORG_ID counts as unset, matching _resolve_org_id's falsy check.
+        if not self.org_id and data.organisations:
             self.org_id = data.organisations[0].id
 
         return data

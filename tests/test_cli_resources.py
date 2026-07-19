@@ -674,6 +674,15 @@ async def test_get_user_detail_defaults_org_when_unset(client):
     assert client.org_id == "org-0000"
 
 
+async def test_get_user_detail_defaults_org_when_blank(client):
+    # A present-but-empty EVNEX_ORG_ID counts as unset and must still default.
+    client.org_id = ""
+    with respx.mock:
+        respx.get(USER_URL).mock(return_value=httpx.Response(200, json=USER_PAYLOAD))
+        await client.get_user_detail()
+    assert client.org_id == "org-0000"
+
+
 async def test_challenge_code_prompts_on_stderr(monkeypatch, capsys):
     # The MFA prompt must go to stderr so a --json command's stdout stays pure.
     import argparse
