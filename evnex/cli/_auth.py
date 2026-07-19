@@ -86,7 +86,14 @@ async def _challenge_code(args: argparse.Namespace, challenge: AuthChallenge) ->
             sys.exit(1)
         print("Code obtained from --otp-command", file=sys.stderr)
         return code
-    return input(f"Enter the 6-digit code ({challenge.name}): ")
+    # Prompt on stderr so a --json command's stdout stays valid JSON.
+    print(
+        f"Enter the 6-digit code ({challenge.name}): ",
+        end="",
+        file=sys.stderr,
+        flush=True,
+    )
+    return input()
 
 
 async def signed_in_auth(args: argparse.Namespace) -> EvnexAuth:
@@ -102,7 +109,10 @@ async def signed_in_auth(args: argparse.Namespace) -> EvnexAuth:
         except ReauthenticationRequiredError:
             print("Cached session expired; signing in again", file=sys.stderr)
 
-    username = os.environ.get("EVNEX_CLIENT_USERNAME") or input("EVNEX username: ")
+    username = os.environ.get("EVNEX_CLIENT_USERNAME")
+    if not username:
+        print("EVNEX username: ", end="", file=sys.stderr, flush=True)
+        username = input()
     password = os.environ.get("EVNEX_CLIENT_PASSWORD") or getpass.getpass(
         "EVNEX password: "
     )
@@ -223,7 +233,10 @@ async def cmd_change_password(args: argparse.Namespace) -> None:
 async def cmd_reset_password(args: argparse.Namespace) -> None:
     # The forgot-password flow needs no signed-in session.
     auth = EvnexAuth()
-    username = os.environ.get("EVNEX_CLIENT_USERNAME") or input("EVNEX username: ")
+    username = os.environ.get("EVNEX_CLIENT_USERNAME")
+    if not username:
+        print("EVNEX username: ", end="", file=sys.stderr, flush=True)
+        username = input()
     destination = await auth.start_password_reset(username)
     if destination:
         print(f"A reset code was sent to {destination}")
