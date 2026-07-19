@@ -1,6 +1,6 @@
 [project]
 name = "evnex"
-version = "0.7.0b2"
+version = "0.7.0"
 description = "A Python wrapper for the EVNEX Cloud API"
 authors = [{ name = "Brian Thorne", email = "brian@hardbyte.nz" }]
 readme = "README.md"
