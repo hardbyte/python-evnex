@@ -352,7 +352,7 @@ class Evnex:
 
     @api_retry(ReadTimeout)
     async def get_charge_point_energy_meter_reading(
-        self, charge_point_id: str
+        self, charge_point_id: str, timeout: float = 30
     ) -> EvnexChargePointEnergyMeterReadingResponse:
         """
         :param charge_point_id:
@@ -361,6 +361,7 @@ class Evnex:
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
+            timeout=timeout,
         )
         json_data = await self._check_api_response(r)
 
