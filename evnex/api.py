@@ -120,13 +120,14 @@ class Evnex:
             "User-Agent": f"python-evnex/{self.version}",
         }
 
-    async def _request(self, method: str, path: str, **kwargs) -> Response:
+    async def _request(self, method: str, path: str, timeout=30, **kwargs) -> Response:
         """Single request path: base URL, headers, auth, and 401 recovery."""
         return await self.httpx_client.request(
             method,
             f"{self._base_url}{path}",
             headers=self._common_headers,
             auth=self._httpx_auth,
+            timeout=timeout,
             **kwargs,
         )
 
@@ -352,7 +353,7 @@ class Evnex:
 
     @api_retry(ReadTimeout)
     async def get_charge_point_energy_meter_reading(
-        self, charge_point_id: str, timeout: float = 30
+        self, charge_point_id: str
     ) -> EvnexChargePointEnergyMeterReadingResponse:
         """
         :param charge_point_id:
@@ -361,7 +362,6 @@ class Evnex:
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
-            timeout=timeout,
         )
         json_data = await self._check_api_response(r)
 
