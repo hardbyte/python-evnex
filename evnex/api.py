@@ -62,10 +62,21 @@ except PackageNotFoundError:
     EVNEX_VERSION = "unknown"
 
 
+# POST /charge-points/{id}/commands/* are not cloud reads: the API relays the
+# command to the charge point over OCPP and holds the HTTP response open until
+# the hardware answers. Measured round trips on an idle, ONLINE E2 run 15-20s
+# (#128), so a tighter timeout reports a perfectly healthy charger as offline.
+COMMAND_TIMEOUT = 30
+
+# Default for the cloud API's own endpoints; see Evnex._request for the
+# measurements behind it. Override per client with Evnex(timeout=...).
+DEFAULT_TIMEOUT = 15
+
 NON_RETRYABLE_EXCEPTIONS = (
     ValidationError,
     EvnexAuthError,
     EvnexConfigurationError,
+    ReadTimeout,
 )
 
 
@@ -75,6 +86,12 @@ def api_retry(*extra_non_retryable: type[BaseException]):
     Authentication failures and validation errors are never retried, nor are
     any exception types passed as arguments. Authentication recovery happens
     in the transport layer (EvnexHttpxAuth), independent of this policy.
+
+    Read timeouts are never retried either: the request reached the API and
+    went unanswered, so retrying here only multiplies a delay the caller has
+    already waited out — five attempts with backoff can occupy minutes, which
+    is longer than a poller's whole interval. Failing fast leaves the decision
+    of when to ask again with the caller.
     """
     return retry(
         wait=wait_random_exponential(multiplier=1, max=60),
@@ -94,6 +111,7 @@ class Evnex:
         auth: EvnexAuth,
         httpx_client: AsyncClient | None = None,
         config: EvnexConfig | None = None,
+        timeout: float = DEFAULT_TIMEOUT,
     ):
         """
         Create an Evnex API client.
@@ -101,6 +119,10 @@ class Evnex:
         :param auth: the authentication component owning the session tokens
         :param httpx_client: optionally share an httpx AsyncClient
         :param config: override API endpoints or the default org
+        :param timeout: seconds to wait on the cloud API's own endpoints. This
+            always overrides the httpx client's timeout, so a shared client's
+            default does not apply. Commands relayed to the charge point use
+            COMMAND_TIMEOUT, and methods that take a timeout argument use it.
         """
         self.httpx_client = httpx_client or AsyncClient()
         if config is None:
@@ -110,6 +132,7 @@ class Evnex:
         self.version = EVNEX_VERSION
         self._base_url = config.EVNEX_BASE_URL.rstrip("/")
         self._httpx_auth = EvnexHttpxAuth(auth)
+        self.timeout = timeout
 
     @property
     def _common_headers(self):
@@ -120,8 +143,25 @@ class Evnex:
             "User-Agent": f"python-evnex/{self.version}",
         }
 
-    async def _request(self, method: str, path: str, timeout=30, **kwargs) -> Response:
-        """Single request path: base URL, headers, auth, and 401 recovery."""
+    async def _request(
+        self, method: str, path: str, timeout: float | None = None, **kwargs
+    ) -> Response:
+        """Single request path: base URL, headers, auth, and 401 recovery.
+
+        The default covers the cloud API's own endpoints. Most answer in under
+        0.2s, but the list endpoints are far slower -- measured at 3.8s for
+        organisation charge points and 2.9s for charge point sessions -- so a
+        tighter default turns their ordinary variance into a ReadTimeout. This
+        leaves roughly 4x headroom over the slowest measured read -- room for
+        the event loop contention a polling host adds on top of server time.
+
+        Endpoints that relay a command to the charge point over OCPP wait on
+        hardware and pass COMMAND_TIMEOUT of their own.
+
+        :param timeout: seconds to wait; None uses the client's ``timeout``
+        """
+        if timeout is None:
+            timeout = self.timeout
         return await self.httpx_client.request(
             method,
             f"{self._base_url}{path}",
@@ -285,7 +325,7 @@ class Evnex:
 
         return EvnexV3APIResponse[EvnexChargePointDetailV3].model_validate(json_data)
 
-    @api_retry(ReadTimeout)
+    @api_retry()
     async def get_charge_point_solar_config(
         self, charge_point_id: str
     ) -> EvnexChargePointSolarConfig:
@@ -296,36 +336,37 @@ class Evnex:
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/get-solar",
+            timeout=COMMAND_TIMEOUT,
         )
         json_data = await self._check_api_response(r)
 
         return EvnexChargePointSolarConfig.model_validate(json_data)
 
-    @api_retry(ReadTimeout)
+    @api_retry()
     async def get_charge_point_override(
-        self, charge_point_id: str
+        self, charge_point_id: str, timeout: float = COMMAND_TIMEOUT
     ) -> EvnexChargePointOverrideConfig:
         """
 
         :param charge_point_id:
+        :param timeout: seconds to wait for the charge point to answer
         :raises: ReadTimeout if the charge point is offline.
         """
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/get-override",
-            timeout=15,
+            timeout=timeout,
         )
         json_data = await self._check_api_response(r)
         return EvnexChargePointOverrideConfig.model_validate(json_data)
 
-    @api_retry(HTTPStatusError, ReadTimeout)
+    @api_retry(HTTPStatusError)
     async def set_charge_point_override(
         self, charge_point_id: str, charge_now: bool, connector_id: int = 1
     ):
         # A ReadTimeout means the charge point did not acknowledge the command
-        # in time (typically offline or not responding); fail fast rather than
-        # retrying, which only prolongs the hang and could resubmit the command.
-        # Matches stop_charge_point's policy for the same reason.
+        # in time (typically offline or not responding). The no-retry policy for
+        # read timeouts matters doubly here: a retry would resubmit the command.
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/set-override",
@@ -335,7 +376,7 @@ class Evnex:
         self._ensure_success(r)
         return True
 
-    @api_retry(ReadTimeout)
+    @api_retry()
     async def get_charge_point_status(
         self, charge_point_id: str
     ) -> EvnexChargePointStatusResponse:
@@ -346,14 +387,15 @@ class Evnex:
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/get-status",
+            timeout=COMMAND_TIMEOUT,
         )
         json_data = await self._check_api_response(r)
 
         return EvnexChargePointStatusResponse.model_validate(json_data)
 
-    @api_retry(ReadTimeout)
+    @api_retry()
     async def get_charge_point_energy_meter_reading(
-        self, charge_point_id: str
+        self, charge_point_id: str, timeout: float = COMMAND_TIMEOUT
     ) -> EvnexChargePointEnergyMeterReadingResponse:
         """
         :param charge_point_id:
@@ -362,6 +404,7 @@ class Evnex:
         r = await self._request(
             "POST",
             f"/charge-points/{charge_point_id}/commands/get-energy-meter-reading",
+            timeout=timeout,
         )
         json_data = await self._check_api_response(r)
 
@@ -397,7 +440,7 @@ class Evnex:
         json_data = await self._check_api_response(r)
         return EvnexGetChargePointSessionsResponse.model_validate(json_data).data
 
-    @api_retry(HTTPStatusError, ReadTimeout)
+    @api_retry(HTTPStatusError)
     async def stop_charge_point(
         self,
         charge_point_id: str,
