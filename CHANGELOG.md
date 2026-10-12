@@ -6,7 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- `Evnex(timeout=...)` sets the timeout, in seconds, for the cloud API's own
+  endpoints (default 15). It is passed per request, so it always overrides the
+  httpx client's timeout; a shared client such as Home Assistant's cannot
+  change it. Commands relayed to the charge point, and methods that take a
+  `timeout` argument, keep their own.
 ### Changed
+- Read timeouts are no longer retried. A timed-out request reached the API and
+  went unanswered; retrying it five times with backoff could occupy several
+  minutes, longer than a typical poller's whole interval. Callers now see the
+  `httpx.ReadTimeout` immediately and decide when to ask again.
+- The default request timeout is 15 seconds, down from 30. Most cloud reads
+  answer in under 0.2s, but `get_org_charge_points` measures 3.8s and
+  `get_charge_point_sessions` 2.9s, so the old httpx default of 5s left those
+  two barely any headroom -- the likely source of the intermittent
+  `ReadTimeout` on `get_org_charge_points` under Home Assistant, which polls
+  them 288 times a day. The `commands/*` endpoints relay to the charge point
+  over OCPP and now share a 30s `COMMAND_TIMEOUT`: `get-override` was capped at
+  15s, inside the 15-20s round trip a healthy charger normally takes, so it
+  reported ONLINE chargers as offline.
+- Restored the `timeout` parameter on `get_charge_point_energy_meter_reading`,
+  dropped in 0.7.1 when the blanket 30s default replaced it.
 ### Removed
 
 ## 0.4.5 - 2024-08-21

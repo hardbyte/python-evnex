@@ -15,6 +15,7 @@ import httpx
 import pytest
 import respx
 
+from evnex.api import DEFAULT_TIMEOUT, Evnex
 from evnex.cli import _resources, build_parser
 from evnex.cli._resources import _match_charge_point, _resolve_one
 from evnex.errors import EvnexConfigurationError
@@ -716,6 +717,46 @@ async def test_set_override_fails_fast_on_timeout(client):
             )
         assert route.call_count == 1, "command was retried instead of failing fast"
         assert time.monotonic() - started < 1.0
+
+
+def _read_timeout(route) -> float:
+    return route.calls.last.request.extensions["timeout"]["read"]
+
+
+async def test_default_timeout_applies_to_cloud_reads(client):
+    with respx.mock:
+        route = respx.get(CP_URL).mock(
+            return_value=httpx.Response(200, json=CHARGE_POINTS_PAYLOAD)
+        )
+        await client.get_org_charge_points("org-0000")
+    assert _read_timeout(route) == DEFAULT_TIMEOUT
+
+
+async def test_client_timeout_overrides_cloud_read_default(resumed_auth):
+    # The timeout is passed per request, so it wins over the httpx client's
+    # own default; a shared client (e.g. Home Assistant's) cannot change it.
+    client = Evnex(
+        auth=resumed_auth,
+        httpx_client=httpx.AsyncClient(timeout=5),
+        timeout=42,
+    )
+    with respx.mock:
+        route = respx.get(CP_URL).mock(
+            return_value=httpx.Response(200, json=CHARGE_POINTS_PAYLOAD)
+        )
+        await client.get_org_charge_points("org-0000")
+    assert _read_timeout(route) == 42
+
+
+async def test_client_timeout_leaves_per_method_timeouts_alone(resumed_auth):
+    # Commands wait on the charge point, not the cloud API, and keep their own.
+    client = Evnex(auth=resumed_auth, timeout=42)
+    with respx.mock:
+        route = respx.post(OVERRIDE_URL).mock(return_value=httpx.Response(200))
+        await client.set_charge_point_override(
+            charge_point_id="cp-0000001", charge_now=True
+        )
+    assert _read_timeout(route) == 10
 
 
 async def test_locations_list(cli, capsys):
